@@ -1,4 +1,11 @@
-requests
-pynostr
-openlocationcode
+dotenv
 geohash2
+openlocationcode
+pandas
+pydantic==2.11.7
+pynostr
+requests
+tqdm
+wget
+
+
