@@ -1,7 +1,10 @@
+import WebSocket from "ws";
 import { NostrFetcher } from "nostr-fetch";
 import { writeFileSync } from "fs";
 const nHoursAgo = (hrs) => Math.floor((Date.now() - hrs * 60 * 60 * 1000) / 1000);
-const fetcher = NostrFetcher.init();
+const fetcher = NostrFetcher.init({
+    webSocketConstructor: WebSocket,
+});
 const relayUrls = [
     "wss://relay.trustroots.org"
 ];

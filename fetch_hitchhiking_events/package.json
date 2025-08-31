@@ -11,10 +11,12 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "nostr-fetch": "^0.17.0"
+    "nostr-fetch": "^0.17.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.7",
-    "typescript": "^5.8.3"
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.2"
   }
 }
