@@ -6,7 +6,9 @@ These notes should show up in https://notes.trustroots.org/
 
 ## Setup
 
-    cp settings.py.example settings.py
+```
+cp settings.py.example settings.py
+```
 
 Add your `nsec` to `settings.py`.
 
@@ -18,13 +20,17 @@ On Debian/Ubuntu you might need this:
 
 Set up the virtual environment:
 
-    python3 -m venv venv
-    source venv/bin/activate
-    pip3 install -r requirements.txt
+```
+python3 -m venv venv
+source venv/bin/activate
+pip3 install -r requirements.txt
+```
 
 Run it:
 
-    python nostrhitch.py
+```
+python nostrhitch.py
+```
 
 
 ## Status - 2024-11
