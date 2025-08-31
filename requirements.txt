@@ -1,11 +1,11 @@
-dotenv
-geohash2
-openlocationcode
-pandas
+dotenv==0.9.9
+geohash2==1.1
+openlocationcode==1.0.1
+pandas==2.3.0
 pydantic==2.11.7
-pynostr
-requests
-tqdm
-wget
+pynostr==0.6.2
+requests==2.32.4
+tqdm==4.67.1
+wget==3.2
 
 

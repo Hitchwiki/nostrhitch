@@ -47,24 +47,29 @@ class NostrHitchhikingPostDataStandard:
             id=f"{ride_record.source}-{uuid.uuid4()}",
             sig=None,  # Signature will be added later
             tags=[
-                ["expiration", 0],
+                ["expiration", str(unix_timestamp_now + 3600)],  # Expiration time set to 1 hour from now
                 ["d", f"{ride_record.source}-{uuid.uuid4()}"],
-                ["g", geohash],
+                ["g", str(geohash)],
                 ["published_at", str(unix_timestamp_now)]
             ]
         )
 
         event.sign(self.private_key_hex)
 
-        print("vars(event)")
-        pprint(vars(event))
 
         if settings.post_to_relays:
             print("posting to relays")
             self.relay_manager.publish_event(event)
             self.relay_manager.run_sync()  # Sync with the relay to send the event
             print("posted, waiting a bit")
-            time.sleep(3)
+            time.sleep(5)
+
+            while self.relay_manager.message_pool.has_ok_notices():
+                ok_msg = self.relay_manager.message_pool.get_ok_notice()
+                print(ok_msg)
+            while self.relay_manager.message_pool.has_events():
+                event_msg = self.relay_manager.message_pool.get_event()
+                print(event_msg.event.to_dict())
 
     def close(self):
         self.relay_manager.close_all_relay_connections()

@@ -9,7 +9,7 @@ const fetcher = NostrFetcher.init({
   webSocketConstructor: WebSocket,
 });
 const relayUrls = [
-    "wss://relay.trustroots.org"
+    "wss://relay.trustroots.org", "wss://nos.lol"
 ];
 
 // // fetches all text events since 24 hr ago in streaming manner
@@ -30,14 +30,15 @@ const relayUrls = [
 const allPosts = await fetcher.fetchAllEvents(
     relayUrls,
     /* filter */
-    { kinds: [ 30399 ] },
+    { kinds: [ 36820 ] },
     /* time range filter */
-    { since: nHoursAgo(10000) },
+    { since: nHoursAgo(1) },
     /* fetch options (optional) */
     { sort: true }
 )
 
 console.log(allPosts.length, "posts fetched");
+
 // Prepare CSV header and rows
 const header = ["id", "pubkey", "created_at", "content"];
 const rows = allPosts.map(post => [
@@ -55,6 +56,9 @@ const csv = [header, ...rows]
 // Write CSV to file
 writeFileSync("allPosts.csv", csv);
 console.log("CSV written to allPosts.csv");
+
 // for (const post of allPosts) {
 //     console.log(post.content);
 // }
+
+process.exit(0);

@@ -15,15 +15,17 @@ Add your `nsec` to `settings.py`.
 
 On Debian/Ubuntu you might need this:
 
-    apt install python3.XX-venv
+```
+apt install python3.XX-venv
+```
 
 
-Set up the virtual environment:
+Set up the virtual environment with Python 3.12:
 
 ```
-python3 -m venv venv
+python3 -m venv .venv
 source venv/bin/activate
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 Run it:
