@@ -26,21 +26,23 @@ class NostrHitchhikingPostDataStandard:
         for relay in settings.relays:
             self.relay_manager.add_relay(relay)
 
-        self.event_kind = 30399  # Event kind for hitchhiking notes
+        self.event_kind = 36820  # Event kind for hitchhiking notes
 
     def post(self, ride_record: HitchhikingRecord):
-        tags = []
-        for tag, value in ride_record.model_dump(exclude_none=False, by_alias=True).items():
-            tags.append([tag, value])
+
+        content = ride_record.model_dump_json(exclude_none=True, by_alias=True)
+ 
 
         start_location = ride_record.stops[0].location
 
-        geohash = geohash2.encode(start_location.latitude, start_location.longitude, precision=9)
+        geohash = geohash2.encode(start_location.latitude, start_location.longitude, precision=10)
+
+        unix_timestamp_now = int(time.time())
 
         event = Event(
             kind=self.event_kind,
-            created_at=int(time.time()),
-            content=ride_record.comment,
+            created_at=unix_timestamp_now,
+            content=content,
             pubkey=self.npub,
             id=f"{ride_record.source}-{uuid.uuid4()}",
             sig=None,  # Signature will be added later
@@ -48,7 +50,8 @@ class NostrHitchhikingPostDataStandard:
                 ["expiration", 0],
                 ["d", f"{ride_record.source}-{uuid.uuid4()}"],
                 ["g", geohash],
-            ] + tags,
+                ["published_at", str(unix_timestamp_now)]
+            ]
         )
 
         event.sign(self.private_key_hex)
