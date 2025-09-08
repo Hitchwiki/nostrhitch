@@ -3,7 +3,7 @@
 Some python code to fetch hitchmap.com's sqlite dump and post data as nostr notes.
 These notes should show up in https://notes.trustroots.org/
 
-![nostrhitch](https://github.com/Hitchwiki/nostrhitch/blob/[branch]/image.jpg?raw=true](https://github.com/Hitchwiki/nostrhitch/blob/main/nostrhitch.jpg?raw=true)
+![nostrhitch](https://github.com/Hitchwiki/nostrhitch/blob/main/nostrhitch.jpg?raw=true)
 
 
 
