@@ -29,33 +29,44 @@ ATOM_URL = ("https://hitchwiki.org/en/api.php?"
 def fetch_geo_info(article_url, debug=False):
     """Fetch geo information from a Hitchwiki article."""
     try:
-        # Convert article URL to raw format
+        # Convert article URL to the actual article page
         if "index.php" in article_url:
             # Extract title from URL parameters
             parsed_url = urllib.parse.urlparse(article_url)
             query_params = urllib.parse.parse_qs(parsed_url.query)
             if "title" in query_params:
                 title = query_params["title"][0]
-                raw_url = f"https://hitchwiki.org/en/index.php?title={title}&action=raw"
+                # Use the actual article URL instead of raw format
+                article_url = f"https://hitchwiki.org/en/{title}"
             else:
                 return None
         else:
             return None
         
-        if not raw_url:
+        if not article_url:
             return None
             
-        # Fetch raw content
-        response = requests.get(raw_url, timeout=10)
+        # Fetch the actual article page
+        response = requests.get(article_url, timeout=10)
         if response.status_code != 200:
             return None
             
         content = response.text
         
         # Parse map tag for geo coordinates
-        # Look for pattern: |map = <map lat="48.864716" lng="2.349014" zoom="9" view="3"/>
-        map_pattern = r'\|map\s*=\s*<map\s+lat="([^"]+)"\s+lng="([^"]+)"'
-        match = re.search(map_pattern, content)
+        # Look for pattern in HTML: <map lat='48.6667' lng='19.5' ...> (may be HTML-encoded)
+        map_patterns = [
+            r'<map[^>]*lat=[\'"]([0-9.-]+)[\'"][^>]*lng=[\'"]([0-9.-]+)[\'"]',
+            r'&lt;map[^>]*lat=[\'"]([0-9.-]+)[\'"][^>]*lng=[\'"]([0-9.-]+)[\'"]',  # HTML-encoded
+            r'<div[^>]*class="[^"]*map[^"]*"[^>]*data-lat="([^"]+)"[^>]*data-lng="([^"]+)"',
+            r'\|map\s*=\s*<map\s+lat="([^"]+)"\s+lng="([^"]+)"'  # Fallback for raw format
+        ]
+        
+        match = None
+        for pattern in map_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                break
         
         if match:
             lat = float(match.group(1))
@@ -193,8 +204,8 @@ def entry_to_nostr(entry: dict, debug=False) -> tuple[Event, dict]:
     
     # Add geo tags if available (following nostrhitch.py pattern)
     if geo_info:
-        # Geohash tag (NIP-52: Geohash)
-        tags.append(["g", geo_info["geohash"]])
+        # Proper geo tag with lat,lng (like in nostrhitch.py)
+        tags.append(["g", f"{geo_info['lat']},{geo_info['lng']}"])
         
         # Open Location Code tags (NIP-52: Geohash)
         tags.append(["L", "open-location-code"])
@@ -209,6 +220,9 @@ def entry_to_nostr(entry: dict, debug=False) -> tuple[Event, dict]:
         # Trustroots circle tags (like in nostrhitch.py)
         tags.append(["L", "trustroots-circle"])
         tags.append(["l", "hitchhikers", "trustroots-circle"])
+        
+        # Geohash as additional tag (like in nostrhitch.py)
+        tags.append(["g", geo_info["geohash"]])
         
         # Hitchwiki tag
         tags.append(["t", "hitchwiki"])
