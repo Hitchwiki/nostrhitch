@@ -88,8 +88,8 @@ class NostrPost:
     def post(self, hitchnote):
         print(hitchnote)
 
-        # (3312039017314494891, 46.55134501890075, 0.401676893234253, 4.0, 'FR', 5.0, 'Anonyme', "On peut attendre 5 minutes comme une demie heure. Mais entre le rond point et la station total c'est pas mal, il y a des endroits pour s'arrêter..", '2024-10-14 09:58:11.703127', 0, 0, '', 46.55134501890075, 0.401676893234253, None, None)
-        hitchmap_id, start_lat, start_lng, rating, country, col6, hitchhiker_name, desc, datetime, col10, col11, end_lat, end_lng, col13, col14, col15 = hitchnote
+        # Database columns: id, lat, lon, rating, country, wait, nickname, comment, datetime, reviewed, banned, ip, dest_lat, dest_lon, signal, ride_datetime, user_id, from_hitchwiki
+        hitchmap_id, start_lat, start_lng, rating, country, wait, hitchhiker_name, desc, datetime, reviewed, banned, ip, end_lat, end_lng, signal, ride_datetime, user_id, from_hitchwiki = hitchnote
 
         if not hitchhiker_name:
             hitchhiker_name = ''
