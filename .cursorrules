@@ -1,0 +1,77 @@
+# Nostr Hitchhiking Bot Project
+
+## Context
+This project is a Nostr bot that publishes Hitchwiki recent changes to a Nostr relay. It fetches RSS feeds from Hitchwiki and converts them into Nostr notes with proper duplicate checking.
+
+## Key Technologies
+
+### Nostr Protocol
+- **Protocol**: Nostr (Notes and Other Stuff Transmitted by Relays)
+- **Documentation**: https://github.com/nostr-protocol/nips
+- **Key NIPs**:
+  - NIP-01: Basic protocol flow
+  - NIP-02: Contact List
+  - NIP-05: Mapping Nostr keys to DNS-based internet identifiers
+  - NIP-09: Event Deletion
+  - NIP-16: Event Treatment
+  - NIP-25: Reactions
+  - NIP-28: Public Chat
+  - NIP-33: Parameterized Replaceable Events
+  - NIP-50: Keywords filter
+  - NIP-51: Lists
+  - NIP-65: Relay List Metadata
+
+### pynostr Library
+- **Library**: pynostr - Python implementation of the Nostr protocol
+- **Documentation**: https://github.com/holgern/pynostr
+- **GitHub**: https://github.com/holgern/pynostr
+- **Key Classes**:
+  - `RelayManager`: Manages connections to multiple relays
+  - `Event`: Represents Nostr events
+  - `Filters`: Used for querying events from relays
+  - `FiltersList`: Container for multiple filters
+  - `PrivateKey`: Handles private key operations
+  - `EventKind`: Enum for different event types
+
+## Project Structure
+- `hw-recentchanges.py`: Main script that fetches Hitchwiki changes and posts to Nostr
+- `settings.py`: Configuration file with private keys and relay URLs
+- `fetch_notes_v2.py`: Utility script for testing relay queries
+- `nostrhitch.py`: Original script for posting hitchmap data to Nostr
+
+## Key Features
+- Fetches recent changes from Hitchwiki RSS feed
+- Converts RSS entries to Nostr text notes (kind 1)
+- Implements relay-based duplicate checking
+- Uses Markdown formatting for links
+- Includes #hitchhiking hashtag
+- Posts to Hitchwiki relay (wss://relay.hitchwiki.org)
+
+## Event Structure
+- **Kind**: 1 (text note)
+- **Tags**: 
+  - `r` tag: RSS ID for duplicate checking (NIP-01: basic protocol)
+  - `summary` tag: Full HTML summary from RSS feed (custom tag, not in official NIPs)
+- **Content**: Formatted as "Author edited URL Summary #hitchhiking"
+
+## Tag Usage
+- **`r` tag**: Official NIP-01 tag for references/URLs, used here for RSS item IDs
+- **`summary` tag**: Custom tag storing the full HTML summary from the RSS feed
+  - Not defined in official NIPs but commonly used in practice
+  - Provides full context for the change that was made
+  - Different from NIP-23's summary tag which is for long-form content (kind 30023)
+
+## Duplicate Checking
+- Fetches all existing notes from relay at startup
+- Uses subscription-based approach with pynostr
+- Checks RSS IDs against existing notes
+- Prevents posting duplicates across script runs
+
+## Development Notes
+- Uses `uv` for Python package management
+- Requires `pynostr` library for Nostr operations
+- Private key stored in `settings.py` (use nsec format)
+- Relay configuration in `settings.py`
+- Debug mode available with `--debug` flag
+- Dry run mode available with `--dry-run` flag
+- Geo-only filtering available with `--geo-only` flag (only posts notes with coordinates)
