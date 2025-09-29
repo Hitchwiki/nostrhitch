@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil/bech32"
 	olc "github.com/google/open-location-code/go"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mmcloughlin/geohash"
@@ -139,12 +141,19 @@ func NewDaemon(config *Config) *Daemon {
 	}
 
 	// Initialize Nostr client
-	if sk, err := nostr.GetPublicKey(config.Nsec); err == nil {
-		daemon.nostr = &NostrClient{
-			sk: config.Nsec,
-			pk: sk,
+	if sk, err := decodeNsec(config.Nsec); err == nil {
+		if pk, err := nostr.GetPublicKey(sk); err == nil {
+			daemon.nostr = &NostrClient{
+				sk: sk,
+				pk: pk,
+			}
+			daemon.nostr.connectRelays(config.Relays)
+			log.Printf("Nostr client initialized with public key: %s", pk)
+		} else {
+			log.Printf("Failed to get public key: %v", err)
 		}
-		daemon.nostr.connectRelays(config.Relays)
+	} else {
+		log.Printf("Failed to decode nsec key: %v", err)
 	}
 
 	return daemon
@@ -493,10 +502,13 @@ func (d *Daemon) postEvent(event *nostr.Event, id string) {
 	}
 
 	if d.nostr != nil {
+		log.Printf("Posting event for ID: %s", id)
 		event.Sign(d.nostr.sk)
 		d.nostr.publish(event)
 		d.markPosted(id)
 		log.Printf("Posted: %s", id)
+	} else {
+		log.Printf("Nostr client is nil, cannot post event for ID: %s", id)
 	}
 }
 
@@ -513,6 +525,17 @@ func (d *Daemon) markPosted(id string) {
 }
 
 // Helper functions
+func decodeNsec(nsec string) (string, error) {
+	// Decode bech32 nsec to get the private key bytes
+	_, data, err := bech32.Decode(nsec)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode bech32: %v", err)
+	}
+
+	// Convert to hex string
+	return hex.EncodeToString(data), nil
+}
+
 func extractXML(content, tag string) string {
 	re := regexp.MustCompile(fmt.Sprintf(`<%s>(.*?)</%s>`, tag, tag))
 	matches := re.FindStringSubmatch(content)
