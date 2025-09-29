@@ -1,0 +1,9 @@
+{
+  "nsec": "nsec1XXXXXXXXXXXXXX",
+  "post_to_relays": true,
+  "relays": [
+    "wss://relay.hitchwiki.org"
+  ],
+  "hw_interval": 300,
+  "hitch_interval": 86400
+}

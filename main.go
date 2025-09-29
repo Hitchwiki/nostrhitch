@@ -101,16 +101,28 @@ func main() {
 }
 
 func loadConfig(filename string) *Config {
-	config := &Config{
-		Nsec:          "nsec1deeqs59fs4ltev6hg8jwf8pljhxld9cdvvmtcf2cfgk7q2vzjnsqp5u8fe",
-		PostToRelays:  true,
-		Relays:        []string{"wss://relay.hitchwiki.org"},
-		HWInterval:    300,   // 5 minutes
-		HitchInterval: 86400, // 24 hours
+	// Check if config file exists
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		log.Fatalf("Configuration file '%s' not found. Please create it with your settings.", filename)
 	}
 
-	if data, err := os.ReadFile(filename); err == nil {
-		json.Unmarshal(data, config)
+	// Read config file
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		log.Fatalf("Error reading config file '%s': %v", filename, err)
+	}
+
+	config := &Config{}
+	if err := json.Unmarshal(data, config); err != nil {
+		log.Fatalf("Error parsing config file '%s': %v", filename, err)
+	}
+
+	// Validate required fields
+	if config.Nsec == "" {
+		log.Fatal("Configuration error: 'nsec' field is required")
+	}
+	if len(config.Relays) == 0 {
+		log.Fatal("Configuration error: 'relays' field is required and cannot be empty")
 	}
 
 	return config
@@ -361,7 +373,8 @@ func (d *Daemon) fetchHitchmap() []HitchmapEntry {
 	var entries []HitchmapEntry
 	for rows.Next() {
 		var entry HitchmapEntry
-		var reviewed, banned, revisedBy int
+		var reviewed, banned int
+		var revisedBy *int
 		var ip string
 
 		err := rows.Scan(

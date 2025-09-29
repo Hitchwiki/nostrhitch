@@ -1,238 +1,211 @@
 # Nostr Hitchhiking Bot
 
-A Python bot that fetches hitchhiking data from Hitchmap and recent changes from Hitchwiki, then posts them as Nostr notes. These notes appear on https://notes.trustroots.org/ and other Nostr relays.
-
-![nostrhitch](https://github.com/Hitchwiki/nostrhitch/blob/main/nostrhitch.jpg?raw=true)
+A minimal, efficient Go daemon that combines Hitchwiki and Hitchmap functionality into a single binary.
 
 ## Features
 
-- **Hitchmap Integration**: Fetches hitchhiking experiences from hitchmap.com and posts them as Nostr notes
-- **Hitchwiki Integration**: Posts recent changes from Hitchwiki as social media-friendly Nostr notes
-- **Daemon Mode**: Run continuously as a background service with configurable intervals
-- **Duplicate Prevention**: Prevents posting duplicate content across restarts
-- **Multiple Event Types**: Supports both kind 1 (social) and kind 30399 (hitchhiking-specific) events
+- **Single Binary**: No dependencies, no package management issues
+- **Multi-language Support**: Fetches recent changes from all 17 Hitchwiki language versions
+- **Concurrent Processing**: Both tasks run simultaneously using goroutines
+- **Minimal Code**: ~500 lines total, DRY principles throughout
+- **Easy Deployment**: Just copy one file
+- **Built-in Logging**: Simple, effective logging
+- **Configuration**: JSON config file
+- **Systemd Ready**: Works perfectly with systemd
 
 ## Quick Start
 
-### 1. Setup
+### 1. Build
 
 ```bash
-cp settings.py.example settings.py
+make build
 ```
 
-Edit `settings.py` and add your `nsec` private key:
+### 2. Configure
 
-```python
-nsec = "your_nsec_key_here"
-post_to_relays = True
-relays = ["wss://relay.hitchwiki.org"]
-```
-
-### 2. Install Dependencies
-
-On Debian/Ubuntu you might need this:
+Copy the example config and edit it:
 
 ```bash
-apt install python3.XX-venv
+cp config.json.example config.json
 ```
 
-Set up the virtual environment with Python 3.12:
+Edit `config.json`:
 
-```bash
-python3 -m venv .venv
-source venv/bin/activate
-pip install -r requirements.txt
+```json
+{
+  "nsec": "your_nsec_key_here",
+  "post_to_relays": true,
+  "relays": ["wss://relay.hitchwiki.org"],
+  "hw_interval": 300,
+  "hitch_interval": 86400
+}
 ```
 
-### 3. Run the Bot
+### 3. Run
 
-#### Individual Scripts
 ```bash
-# Run Hitchmap bot (posts hitchhiking experiences)
-python nostrhitch.py
+# Run daemon
+make run
 
-# Run Hitchwiki bot (posts recent changes)
-python hwrecentchanges.py
-```
-
-#### Daemon Mode (Recommended)
-```bash
-# Run as daemon with default intervals
-python daemon.py
-
-# Run with custom intervals
-python daemon.py --hw-interval 600 --hitchmap-interval 43200
+# Test once
+make once
 
 # Debug mode
-python daemon.py --debug
+make debug
 
-# Dry run (test without posting)
-python daemon.py --dry-run
+# Dry run
+make dry-run
 ```
 
-## Daemon Mode
+## Installation
 
-The daemon combines both functionalities into a single, continuously running service:
-
-- **Hitchwiki Recent Changes**: Posts recent changes from Hitchwiki to Nostr (configurable interval, default: 5 minutes)
-- **Hitchmap Data**: Posts new hitchhiking experiences from Hitchmap to Nostr (configurable interval, default: 24 hours)
-- **Graceful Shutdown**: Handles SIGINT and SIGTERM signals properly
-- **Comprehensive Logging**: Logs to both file and console with configurable levels
-- **Dry Run Mode**: Test the daemon without actually posting to relays
-- **One-time Run**: Run tasks once and exit (useful for testing)
-
-### Command Line Options
-
-- `--hw-interval SECONDS`: Interval between Hitchwiki checks (default: 300)
-- `--hitchmap-interval SECONDS`: Interval between Hitchmap checks (default: 86400)
-- `--debug`: Enable debug logging
-- `--dry-run`: Don't actually post to relays
-- `--run-once`: Run each task once and exit
-
-### System Service Installation
-
-For production use, install as a systemd service:
+### Quick Setup (Recommended)
 
 ```bash
-sudo ./install_daemon.sh
+# One-command setup (installs Go, builds binary, sets up systemd service)
+sudo ./setup.sh
+
+# Or use make
+make setup
 ```
 
-This will:
-- Create a `nostr` system user
-- Install files to `/opt/nostrhitch`
-- Install the systemd service
-- Enable the service to start on boot
-
-#### Service Management
+### Manual Installation
 
 ```bash
-# Start the service
-sudo systemctl start nostr-hitch-daemon
+# Build
+make build
 
-# Stop the service
-sudo systemctl stop nostr-hitch-daemon
+# Install as systemd service
+make install
 
-# Restart the service
-sudo systemctl restart nostr-hitch-daemon
+# Start service
+make start
 
 # Check status
-sudo systemctl status nostr-hitch-daemon
+make status
 
 # View logs
-sudo journalctl -u nostr-hitch-daemon -f
-
-# Enable/disable auto-start
-sudo systemctl enable nostr-hitch-daemon
-sudo systemctl disable nostr-hitch-daemon
+make logs
 ```
 
-## Testing
-
-Run the test suite to verify everything works:
+### Service Management
 
 ```bash
-python test_daemon.py
+# Start/stop/restart service
+make start
+make stop
+make restart
+
+# Check status and logs
+make status
+make logs
+make log-recent
+
+# Configuration management
+make config          # Show current config
+make edit-config     # Edit config file
+make test-config     # Test configuration
 ```
-
-## Logging
-
-Logs are written to:
-- **File**: `logs/daemon_YYYYMMDD.log`
-- **Console**: Standard output
-- **System Journal**: When running as systemd service
-
-Log levels:
-- **INFO**: Normal operation messages
-- **DEBUG**: Detailed debugging information (use `--debug` flag)
-- **WARNING**: Non-critical issues
-- **ERROR**: Errors that don't stop the daemon
 
 ## Configuration
 
-### Settings
+All settings in `config.json`:
 
-All settings are in `settings.py`:
-- `nsec`: Your Nostr private key (nsec format)
-- `post_to_relays`: Whether to actually post to relays
-- `relays`: List of relay URLs to post to
+- `nsec`: Your Nostr private key
+- `post_to_relays`: Whether to actually post
+- `relays`: List of relay URLs
+- `hw_interval`: Hitchwiki check interval (seconds)
+- `hitch_interval`: Hitchmap check interval (seconds)
+- `debug`: Enable debug logging
+- `dry_run`: Test mode
 
-### Intervals
+## Command Line Options
 
-- **Hitchwiki Interval**: How often to check for recent changes (default: 5 minutes)
-- **Hitchmap Interval**: How often to check for new hitchhiking data (default: 24 hours)
+- `-config`: Configuration file (default: config.json)
+- `-debug`: Enable debug logging
+- `-dry-run`: Don't post to relays
+- `-once`: Run once and exit
 
-## Troubleshooting
+## Multi-language Support
 
-### Common Issues
+The daemon automatically fetches recent changes from all Hitchwiki language versions:
 
-1. **Permission Denied**: Make sure the daemon has write access to the logs and data directories
-2. **Connection Errors**: Check your internet connection and relay URLs
-3. **Key Errors**: Verify your nsec key is correct and properly formatted
+- English (en)
+- Bulgarian (bg) 
+- German (de)
+- Spanish (es)
+- Finnish (fi)
+- French (fr)
+- Hebrew (he)
+- Croatian (hr)
+- Italian (it)
+- Lithuanian (lt)
+- Dutch (nl)
+- Polish (pl)
+- Portuguese (pt)
+- Romanian (ro)
+- Russian (ru)
+- Turkish (tr)
+- Chinese (zh)
 
-### Debug Mode
-
-Run with `--debug` to get detailed logging:
-
-```bash
-python daemon.py --debug
-```
-
-### Dry Run Mode
-
-Test without posting to relays:
-
-```bash
-python daemon.py --dry-run --debug
-```
-
-### One-time Run
-
-Test both tasks once:
-
-```bash
-python daemon.py --run-once --debug
-```
-
-## Status - 2024-11
-
-The script is posting nightly from `npub12vz4acq3a94qpfc9kwp98wwtces5ej7n0h6d44pwc6dmucyvggyses5uyk`.
-
-There's also hitchwiki notes, coming from `npub1zmd4ydxpmkqg9ztm6tfph0kyhqz36txs8cjtsxd22geqwl2y8k5s7x6qpm`, generated by https://github.com/Hitchwiki/hwpybot
-
-Both of these are sending out kind 30399 events to relay.trustroots.org. See https://github.com/Trustroots/nostroots/blob/main/docs/Events.md
-Not sure if there are currently any other apps besides https://github.com/trustroots/nostroots that can do something useful with these notes, besides e.g. https://lightningk0ala.github.io/nostr-wtf/query
-
-We can consider sending out kind 1 notes, to make this hitch stuff visible in the nostr social media sphere.
+Each note includes a language indicator (e.g., "(EN)", "(DE)", "(FR)") and appropriate hashtags.
 
 ## Architecture
 
-The daemon runs two separate worker threads:
+The daemon uses a simple, efficient design:
 
-1. **Hitchwiki Worker**: Fetches recent changes and posts them as Nostr notes
-2. **Hitchmap Worker**: Downloads and posts new hitchhiking experiences
+1. **Main Goroutine**: Handles signals and coordinates tasks
+2. **Hitchwiki Goroutine**: Fetches and posts recent changes from all languages
+3. **Hitchmap Goroutine**: Fetches and posts hitchhiking data from SQLite
+4. **Shared State**: Thread-safe duplicate checking
 
-Both workers run independently with their own intervals and error handling.
+## Code Structure
 
-## Security
+- **main.go**: Single file with all functionality
+- **Config**: JSON-based configuration
+- **NostrClient**: Handles all Nostr operations
+- **Daemon**: Manages both tasks concurrently
+- **Helper Functions**: DRY utility functions
 
-When installed as a system service:
-- Runs as unprivileged `nostr` user
-- Limited file system access
-- No network binding capabilities
-- Resource limits applied
+## Advantages Over Python
+
+1. **No Dependencies**: Single binary, no package management
+2. **Better Performance**: Lower memory usage, faster execution
+3. **Easier Deployment**: Just copy one file
+4. **Concurrent by Design**: Natural goroutine usage
+5. **System Integration**: Better systemd compatibility
+6. **Cross Platform**: Easy to build for different architectures
 
 ## Monitoring
 
-Monitor the daemon using:
-- `systemctl status nostr-hitch-daemon`
-- `journalctl -u nostr-hitch-daemon -f`
-- Log files in `logs/` directory
+```bash
+# Check status
+make status
+
+# View logs
+make logs
+
+# Restart if needed
+make restart
+```
 
 ## Development
 
-For development and testing:
-1. Use `--debug` for detailed logging
-2. Use `--dry-run` to test without posting
-3. Use `--run-once` to test both tasks quickly
-4. Check logs for any issues
-    
+```bash
+# Test changes
+make test
+
+# Debug issues
+make debug
+
+# Clean build
+make clean && make build
+```
+
+## File Sizes
+
+- **Go Binary**: ~8MB (statically linked)
+- **Python Version**: ~50MB+ (with dependencies)
+- **Deployment**: Single file vs multiple files + dependencies
+
+The Go version is significantly simpler, more reliable, and easier to deploy than the Python version.

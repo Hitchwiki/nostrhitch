@@ -28,12 +28,20 @@ test: build
 clean:
 	rm -f nostrhitch-daemon
 
-# Install as systemd service
+# Install as systemd service (quick)
 install: build
 	sudo cp nostrhitch-daemon /usr/local/bin/
 	sudo cp nostrhitch-daemon.service /etc/systemd/system/
 	sudo systemctl daemon-reload
 	sudo systemctl enable nostrhitch-daemon
+
+# Full server setup (recommended)
+setup: build
+	sudo ./setup.sh
+
+# Quick install (one command)
+quick-install:
+	sudo ./install.sh
 
 # Uninstall systemd service
 uninstall:
@@ -58,4 +66,26 @@ status:
 
 logs:
 	sudo journalctl -u nostrhitch-daemon -f
+
+# Show recent logs
+log-recent:
+	sudo journalctl -u nostrhitch-daemon --since "1 hour ago"
+
+# Show configuration
+config:
+	@echo "Configuration file: /opt/nostrhitch/config.json"
+	@if [ -f "/opt/nostrhitch/config.json" ]; then \
+		echo "Current configuration:"; \
+		sudo cat /opt/nostrhitch/config.json | jq . 2>/dev/null || sudo cat /opt/nostrhitch/config.json; \
+	else \
+		echo "Configuration file not found. Run 'make setup' first."; \
+	fi
+
+# Edit configuration
+edit-config:
+	sudo nano /opt/nostrhitch/config.json
+
+# Test configuration
+test-config:
+	./nostrhitch-daemon -once -debug
 
