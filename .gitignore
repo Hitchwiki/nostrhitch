@@ -232,3 +232,12 @@ settings.py
 OLD/
 
 data_standard_pydantic_model.py
+
+config.json
+
+# Go binaries
+nostrhitch-daemon
+*.exe
+
+# Go build cache
+go-build/

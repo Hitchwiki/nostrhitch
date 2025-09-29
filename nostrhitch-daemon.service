@@ -1,0 +1,34 @@
+[Unit]
+Description=Nostr Hitchhiking Bot Daemon
+Documentation=https://github.com/your-repo/nostrhitch
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=nostr
+Group=nostr
+WorkingDirectory=/opt/nostrhitch
+ExecStart=/usr/local/bin/nostrhitch-daemon
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nostr-hitch-daemon
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/nostrhitch
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=256M
+CPUQuota=25%
+
+[Install]
+WantedBy=multi-user.target
+
