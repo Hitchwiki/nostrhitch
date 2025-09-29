@@ -1,0 +1,35 @@
+[Unit]
+Description=Nostr Hitchhiking Bot Daemon
+Documentation=https://github.com/your-repo/nostrhitch
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=nostr
+Group=nostr
+WorkingDirectory=/opt/nostrhitch
+ExecStart=/usr/bin/python3 /opt/nostrhitch/daemon.py
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nostr-hitch-daemon
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/nostrhitch/logs /opt/nostrhitch/hitchmap-dumps /opt/nostrhitch/nostrhitch.sqlite
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
