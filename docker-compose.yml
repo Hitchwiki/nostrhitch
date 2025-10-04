@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   nostrhitch:
     build: .
@@ -11,7 +9,4 @@ services:
       - ./hitchmap-dumps:/root/hitchmap-dumps
     environment:
       - TZ=UTC
-    # Uncomment if you want to run in daemon mode
-    # command: ["./nostrhitch-daemon"]
-    # Or run once for testing
-    command: ["./nostrhitch-daemon", "--once"]
+    command: ["./nostrhitch-daemon"]

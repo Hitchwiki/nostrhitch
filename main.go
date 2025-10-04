@@ -48,7 +48,7 @@ type Daemon struct {
 	config        *Config
 	nostr         *NostrClient
 	posted        map[string]bool
-	existingNotes map[string]bool // Track existing notes from relays
+	existingNotes map[string]bool           // Track existing notes from relays
 	httpCache     map[string]HTTPCacheEntry // Cache for HTTP requests
 	mu            sync.RWMutex
 	ctx           context.Context
@@ -312,7 +312,7 @@ func (d *Daemon) processHitchwiki() {
 		log.Printf("Fetching changes for language: %s", lang)
 		entries := d.fetchHitchwiki(lang)
 		log.Printf("Fetched %d Hitchwiki entries for %s", len(entries), lang)
-		
+
 		// Add delay between language requests to respect rate limits
 		if i < len(languages)-1 {
 			log.Printf("Waiting 2 seconds before next language...")
@@ -462,7 +462,7 @@ func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 	url := fmt.Sprintf("https://hitchwiki.org/%s/api.php?hidebots=1&urlversion=1&days=7&limit=50&action=feedrecentchanges&feedformat=atom", lang)
 
 	log.Printf("Fetching from: %s", url)
-	
+
 	data, err := d.cachedHTTPGet(url)
 	if err != nil {
 		log.Printf("Error fetching Hitchwiki: %v", err)
