@@ -1,6 +1,9 @@
 # Build stage
 FROM golang:1.21-alpine AS builder
 
+# Install SQLite dependencies
+RUN apk add --no-cache sqlite-dev gcc musl-dev
+
 WORKDIR /app
 
 # Copy go mod files
@@ -12,14 +15,14 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o nostrhitch-daemon .
+# Build the binary with CGO enabled for SQLite
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o nostrhitch-daemon .
 
 # Final stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates tzdata
+# Install ca-certificates and SQLite for HTTPS requests and database
+RUN apk --no-cache add ca-certificates tzdata sqlite
 
 WORKDIR /root/
 
