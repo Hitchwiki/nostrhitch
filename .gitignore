@@ -1,54 +1,25 @@
-# Go binaries
-nostrhitch-daemon
-*.exe
-
-# Go build cache
-go-build/
-
-# Go modules
-go.sum
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
 # Logs
-*.log
+logs/*.log
 
-# Database files
-*.sqlite
-*.sqlite3
-*.db
+# SQLite dumps (keep only latest)
+hitchmap-dumps/*.sqlite
 
-# Configuration files (keep examples)
-config.json
-!config.json.example
-
-# Data directories
-hitchmap-dumps/
-OLD/
+# Compiled binaries
+nostrhitch-daemon
+main
 
 # Temporary files
 *.tmp
 *.temp
 
-# Node.js (for any frontend tools)
-node_modules/
-npm-debug.log
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Environment files
-.env
-.env.local
-.env.*.local
+# OS files
+.DS_Store
+Thumbs.db
+
+config.json

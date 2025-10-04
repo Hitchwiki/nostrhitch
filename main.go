@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -487,6 +488,9 @@ func (d *Daemon) fetchHitchmap() []HitchmapEntry {
 		log.Printf("Hitchmap file %s already exists", filename)
 	}
 
+	// Clean up old hitchmap dumps (keep only the latest)
+	d.cleanupOldHitchmapDumps(filename)
+
 	// Query database
 	db, err := sql.Open("sqlite3", filename)
 	if err != nil {
@@ -529,6 +533,31 @@ func (d *Daemon) fetchHitchmap() []HitchmapEntry {
 	return entries
 }
 
+func (d *Daemon) cleanupOldHitchmapDumps(currentFile string) {
+	// Get the directory of the current file
+	dir := filepath.Dir(currentFile)
+
+	// Read all files in the hitchmap-dumps directory
+	files, err := filepath.Glob(filepath.Join(dir, "hitchmap_*.sqlite"))
+	if err != nil {
+		log.Printf("Error reading hitchmap dumps directory: %v", err)
+		return
+	}
+
+	// If we have more than 1 file, keep only the current one
+	if len(files) > 1 {
+		for _, file := range files {
+			if file != currentFile {
+				log.Printf("Removing old hitchmap dump: %s", file)
+				if err := os.Remove(file); err != nil {
+					log.Printf("Error removing old dump %s: %v", file, err)
+				}
+			}
+		}
+		log.Printf("Cleaned up old hitchmap dumps, kept: %s", currentFile)
+	}
+}
+
 func (d *Daemon) downloadFile(url, filename string) error {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -547,7 +576,7 @@ func (d *Daemon) downloadFile(url, filename string) error {
 }
 
 func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.Event {
-	// Extract article URL from diff link (same as Python)
+	// Extract article URL from diff link
 	articleURL := d.extractArticleURL(entry.Link)
 	log.Printf("Original link: %s", entry.Link)
 	log.Printf("Extracted article URL: %s", articleURL)
@@ -569,7 +598,7 @@ func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.
 		content = fmt.Sprintf("📝 %s 📄 #hitchhiking", entry.Title)
 	}
 
-	// Get geo info (pass original link like Python)
+	// Get geo info (pass original link)
 	geoInfo := d.fetchGeoInfo(entry.Link)
 	if geoInfo != nil {
 		log.Printf("Found geo info: lat=%.6f, lng=%.6f, pluscode=%s, geohash=%s",
@@ -902,7 +931,7 @@ func (d *Daemon) extractArticleURL(diffURL string) string {
 	// Example: https://hitchwiki.org/ru/index.php?title=Куба&diff=114734&oldid=109364
 	// Should become: https://hitchwiki.org/ru/Куба
 
-	// Parse URL like Python does with urllib.parse
+	// Parse URL to extract language and title
 	if diffURL == "" {
 		return ""
 	}
@@ -944,7 +973,7 @@ func (d *Daemon) extractArticleURL(diffURL string) string {
 }
 
 func (d *Daemon) cleanAuthor(author string) string {
-	// Clean author name exactly like Python
+	// Clean author name
 	// Remove HTML tags
 	re := regexp.MustCompile(`<[^>]+>`)
 	clean := re.ReplaceAllString(author, "")
@@ -957,7 +986,7 @@ func (d *Daemon) cleanAuthor(author string) string {
 }
 
 func (d *Daemon) cleanSummary(summary string) string {
-	// Clean up HTML and extract meaningful content exactly like Python
+	// Clean up HTML and extract meaningful content
 	// Remove HTML tags
 	re := regexp.MustCompile(`<[^>]+>`)
 	clean := re.ReplaceAllString(summary, "")
@@ -982,7 +1011,7 @@ func (d *Daemon) cleanSummary(summary string) string {
 }
 
 func (d *Daemon) normalizeWhitespace(text string) string {
-	// Normalize whitespace exactly like Python, but preserve double newlines
+	// Normalize whitespace but preserve double newlines
 	// First, normalize spaces within each line
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
@@ -1000,13 +1029,13 @@ type GeoInfo struct {
 }
 
 func (d *Daemon) fetchGeoInfo(originalLink string) *GeoInfo {
-	// First extract article URL from the original link (like Python)
+	// First extract article URL from the original link
 	articleURL := d.extractArticleURL(originalLink)
 	if articleURL == "" {
 		return nil
 	}
 
-	// Fetch the actual article page (like Python)
+	// Fetch the actual article page
 	resp, err := http.Get(articleURL)
 	if err != nil {
 		log.Printf("Error fetching page for geo info: %v", err)
@@ -1026,7 +1055,7 @@ func (d *Daemon) fetchGeoInfo(originalLink string) *GeoInfo {
 
 	content := string(body)
 
-	// Use the exact same patterns as Python, but also handle HTML-encoded format
+	// Use patterns to match latitude and longitude coordinates
 	mapPatterns := []string{
 		`<map[^>]*lat=['"]([0-9.-]+)['"][^>]*lng=['"]([0-9.-]+)['"]`,
 		`&lt;map[^>]*lat=['"]([0-9.-]+)['"][^>]*lng=['"]([0-9.-]+)['"]`, // HTML-encoded
