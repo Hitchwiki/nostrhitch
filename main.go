@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,12 +38,13 @@ type Config struct {
 
 // Daemon manages both tasks
 type Daemon struct {
-	config *Config
-	nostr  *NostrClient
-	posted map[string]bool
-	mu     sync.RWMutex
-	ctx    context.Context
-	cancel context.CancelFunc
+	config        *Config
+	nostr         *NostrClient
+	posted        map[string]bool
+	existingNotes map[string]bool // Track existing notes from relays
+	mu            sync.RWMutex
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // NostrClient handles all Nostr operations
@@ -86,7 +88,25 @@ func main() {
 	var debug = flag.Bool("debug", false, "Enable debug logging")
 	var dryRun = flag.Bool("dry-run", false, "Don't post to relays")
 	var runOnce = flag.Bool("once", false, "Run once and exit")
+	var disableDuplicateCheck = flag.Bool("disable-duplicate-check", false, "Disable duplicate checking")
+	var forcePost = flag.Bool("force-post", false, "Force post 5 Hitchwiki and 5 Hitchmap notes even if already posted")
 	flag.Parse()
+
+	// Setup logging to file
+	logFile, err := os.OpenFile("logs/daemon.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		// Create logs directory if it doesn't exist
+		os.MkdirAll("logs", 0755)
+		logFile, err = os.OpenFile("logs/daemon.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalf("Failed to open log file: %v", err)
+		}
+	}
+	defer logFile.Close()
+
+	// Set up logging to both file and stdout
+	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	config := loadConfig(*configFile)
 	config.Debug = *debug
@@ -94,8 +114,19 @@ func main() {
 
 	daemon := NewDaemon(config)
 
+	// Skip duplicate checking if disabled
+	if *disableDuplicateCheck {
+		log.Printf("Duplicate checking disabled")
+		daemon.existingNotes = make(map[string]bool) // Clear existing notes
+	}
+
 	if *runOnce {
 		daemon.runOnce()
+		return
+	}
+
+	if *forcePost {
+		daemon.runForcePost()
 		return
 	}
 
@@ -134,10 +165,11 @@ func NewDaemon(config *Config) *Daemon {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	daemon := &Daemon{
-		config: config,
-		posted: make(map[string]bool),
-		ctx:    ctx,
-		cancel: cancel,
+		config:        config,
+		posted:        make(map[string]bool),
+		existingNotes: make(map[string]bool),
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 
 	// Initialize Nostr client
@@ -149,6 +181,12 @@ func NewDaemon(config *Config) *Daemon {
 			}
 			daemon.nostr.connectRelays(config.Relays)
 			log.Printf("Nostr client initialized with public key: %s", pk)
+
+			// Fetch existing notes for duplicate checking
+			daemon.fetchExistingNotes()
+
+			// Check and update profile with NIP-05 verification
+			daemon.ensureProfileExists()
 		} else {
 			log.Printf("Failed to get public key: %v", err)
 		}
@@ -201,7 +239,28 @@ func (d *Daemon) runOnce() {
 	log.Println("One-time run completed")
 }
 
+func (d *Daemon) runForcePost() {
+	log.Println("Force posting 5 Hitchwiki and 5 Hitchmap notes...")
+
+	// Clear posted tracking to force posting
+	d.mu.Lock()
+	d.posted = make(map[string]bool)
+	d.existingNotes = make(map[string]bool) // Also clear existing notes
+	d.mu.Unlock()
+
+	// Process Hitchwiki with limit
+	d.processHitchwikiForce(5)
+
+	// Process Hitchmap with limit
+	d.processHitchmapForce(5)
+
+	log.Println("Force post completed")
+}
+
 func (d *Daemon) runHitchwikiTask() {
+	// Process immediately on startup
+	d.processHitchwiki()
+
 	ticker := time.NewTicker(time.Duration(d.config.HWInterval) * time.Second)
 	defer ticker.Stop()
 
@@ -216,6 +275,9 @@ func (d *Daemon) runHitchwikiTask() {
 }
 
 func (d *Daemon) runHitchmapTask() {
+	// Process immediately on startup
+	d.processHitchmap()
+
 	ticker := time.NewTicker(time.Duration(d.config.HitchInterval) * time.Second)
 	defer ticker.Stop()
 
@@ -232,27 +294,103 @@ func (d *Daemon) runHitchmapTask() {
 func (d *Daemon) processHitchwiki() {
 	log.Println("Processing Hitchwiki recent changes...")
 
-	// Language codes for different Hitchwiki versions
-	languages := []string{"en", "bg", "de", "es", "fi", "fr", "he", "hr", "it", "lt", "nl", "pl", "pt", "ro", "ru", "tr", "zh"}
+	// Process multiple languages - comprehensive list of Hitchwiki languages
+	languages := []string{
+		"en", "de", "fr", "es", "it", "pt", "pl", "ru", "nl", "sv", "no", "da", "fi",
+		"cs", "sk", "hu", "ro", "bg", "hr", "sl", "et", "lv", "lt", "el", "tr", "ar",
+		"he", "fa", "hi", "bn", "th", "vi", "ko", "ja", "zh", "ca", "eu", "gl", "is",
+		"mt", "cy", "ga", "mk", "sq", "sr", "bs", "uk", "be", "ka", "hy", "az", "kk",
+		"uz", "ky", "tg", "mn", "my", "km", "lo", "si", "ne", "ur", "ta", "te", "kn",
+		"ml", "gu", "pa", "or", "as", "mr", "sa", "sd", "dv", "bo", "dz",
+		"ti", "am", "om", "so", "sw", "zu", "xh", "af", "st", "tn", "ts", "ve", "nr",
+		"ss", "nso",
+	}
 
 	for _, lang := range languages {
 		log.Printf("Fetching changes for language: %s", lang)
 		entries := d.fetchHitchwiki(lang)
 		log.Printf("Fetched %d Hitchwiki entries for %s", len(entries), lang)
 
-		for _, entry := range entries {
+		// Process all entries (no artificial limit)
+		for i, entry := range entries {
 			if d.isPosted(entry.ID) {
 				log.Printf("Skipping already posted: %s", entry.ID)
 				continue
 			}
 
-			log.Printf("Processing entry: %s (%s)", entry.Title, lang)
+			log.Printf("Processing entry %d/%d: %s (%s)", i+1, len(entries), entry.Title, lang)
 			event := d.createHitchwikiEvent(entry, lang)
 			if event != nil {
 				d.postEvent(event, entry.ID)
 			}
 		}
 	}
+}
+
+func (d *Daemon) processHitchwikiForce(limit int) {
+	log.Printf("Force processing Hitchwiki recent changes (limit: %d)...", limit)
+
+	// Process multiple languages
+	languages := []string{
+		"en", "de", "fr", "es", "it", "pt", "pl", "ru", "nl", "sv", "no", "da", "fi",
+		"cs", "sk", "hu", "ro", "bg", "hr", "sl", "et", "lv", "lt", "el", "tr", "ar",
+		"he", "fa", "hi", "bn", "th", "vi", "ko", "ja", "zh", "ca", "eu", "gl", "is",
+		"mt", "cy", "ga", "mk", "sq", "sr", "bs", "uk", "be", "ka", "hy", "az", "kk",
+		"uz", "ky", "tg", "mn", "my", "km", "lo", "si", "ne", "ur", "ta", "te", "kn",
+		"ml", "gu", "pa", "or", "as", "mr", "sa", "sd", "dv", "bo", "dz",
+		"ti", "am", "om", "so", "sw", "zu", "xh", "af", "st", "tn", "ts", "ve", "nr",
+		"ss", "nso",
+	}
+
+	postedCount := 0
+	for _, lang := range languages {
+		if postedCount >= limit {
+			break
+		}
+
+		log.Printf("Fetching changes for language: %s", lang)
+		entries := d.fetchHitchwiki(lang)
+		log.Printf("Fetched %d Hitchwiki entries for %s", len(entries), lang)
+
+		// Process entries up to limit
+		for _, entry := range entries {
+			if postedCount >= limit {
+				break
+			}
+
+			log.Printf("Force posting entry %d: %s (%s)", postedCount+1, entry.Title, lang)
+			event := d.createHitchwikiEvent(entry, lang)
+			if event != nil {
+				d.postEvent(event, entry.ID)
+				postedCount++
+			}
+		}
+	}
+
+	log.Printf("Force posted %d Hitchwiki entries", postedCount)
+}
+
+func (d *Daemon) processHitchmapForce(limit int) {
+	log.Printf("Force processing Hitchmap data (limit: %d)...", limit)
+
+	entries := d.fetchHitchmap()
+	log.Printf("Fetched %d Hitchmap entries", len(entries))
+
+	postedCount := 0
+	for _, entry := range entries {
+		if postedCount >= limit {
+			break
+		}
+
+		log.Printf("Force posting hitchmap entry %d: %d", postedCount+1, entry.ID)
+		event := d.createHitchmapEvent(entry)
+		if event != nil {
+			d.postEvent(event, fmt.Sprintf("hitchmap_%d", entry.ID))
+			postedCount++
+		}
+	}
+
+	log.Printf("Force posted %d Hitchmap entries", postedCount)
 }
 
 func (d *Daemon) processHitchmap() {
@@ -276,7 +414,7 @@ func (d *Daemon) processHitchmap() {
 }
 
 func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
-	url := fmt.Sprintf("https://hitchwiki.org/%s/api.php?hidebots=1&urlversion=1&days=90&limit=500&action=feedrecentchanges&feedformat=atom", lang)
+	url := fmt.Sprintf("https://hitchwiki.org/%s/api.php?hidebots=1&urlversion=1&days=7&limit=50&action=feedrecentchanges&feedformat=atom", lang)
 
 	log.Printf("Fetching from: %s", url)
 	resp, err := http.Get(url)
@@ -315,14 +453,16 @@ func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 		if title := extractXML(match, "title"); title != "" {
 			entry.Title = title
 		}
-		if link := extractXML(match, "link"); link != "" {
+		if link := extractXML(match, "link href"); link != "" {
 			entry.Link = link
 		}
 		if id := extractXML(match, "id"); id != "" {
 			entry.ID = id
 		}
-		if author := extractXML(match, "author>name"); author != "" {
-			entry.Author = author
+		// Extract author from nested structure <author><name>AuthorName</name></author>
+		authorMatch := regexp.MustCompile(`<author>.*?<name>(.*?)</name>.*?</author>`)
+		if authorMatches := authorMatch.FindStringSubmatch(match); len(authorMatches) > 1 {
+			entry.Author = authorMatches[1]
 		}
 		if summary := extractXML(match, "summary"); summary != "" {
 			entry.Summary = summary
@@ -421,21 +561,64 @@ func (d *Daemon) downloadFile(url, filename string) error {
 }
 
 func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.Event {
-	// Extract article URL from diff link
+	// Extract article URL from diff link (same as Python)
 	articleURL := d.extractArticleURL(entry.Link)
+	log.Printf("Original link: %s", entry.Link)
+	log.Printf("Extracted article URL: %s", articleURL)
 
-	// Build content with language indicator
-	content := fmt.Sprintf("📝 %s edited %s (%s)\n\n📄 %s\n\n#hitchhiking #hitchwiki",
-		entry.Author, articleURL, strings.ToUpper(lang), d.cleanSummary(entry.Summary))
+	// Build content in the exact format specified
+	// Format: "📝 Author edited URL 📄 #hitchhiking"
 
-	// Get geo info
-	geoInfo := d.fetchGeoInfo(articleURL)
+	authorClean := ""
+	if entry.Author != "" {
+		authorClean = d.cleanAuthor(entry.Author)
+	}
+
+	var content string
+	if articleURL != "" && authorClean != "" {
+		content = fmt.Sprintf("📝 %s edited %s 📄 #hitchhiking", authorClean, articleURL)
+	} else if articleURL != "" {
+		content = fmt.Sprintf("📝 edited %s 📄 #hitchhiking", articleURL)
+	} else {
+		content = fmt.Sprintf("📝 %s 📄 #hitchhiking", entry.Title)
+	}
+
+	// Get geo info (pass original link like Python)
+	geoInfo := d.fetchGeoInfo(entry.Link)
+	if geoInfo != nil {
+		log.Printf("Found geo info: lat=%.6f, lng=%.6f, pluscode=%s, geohash=%s",
+			geoInfo.Lat, geoInfo.Lng, geoInfo.PlusCode, geoInfo.Geohash)
+	} else {
+		log.Printf("No geo info found for %s", articleURL)
+	}
+
+	// Ensure there's always a summary
+	summary := entry.Summary
+	if summary == "" {
+		// Create a summary from available data
+		if entry.Author != "" {
+			summary = fmt.Sprintf("Hitchwiki article '%s' was edited by %s", entry.Title, entry.Author)
+		} else {
+			summary = fmt.Sprintf("Hitchwiki article '%s' was edited", entry.Title)
+		}
+	}
+
+	// Truncate summary to 160 characters if too long
+	if len(summary) > 160 {
+		summary = summary[:160] + "..."
+	}
 
 	// Create tags
 	tags := nostr.Tags{
-		{"r", entry.ID},
-		{"summary", entry.Summary},
+		{"r", entry.Link}, // Use full diff URL instead of RSS ID
+		{"summary", summary},
 	}
+
+	// Always add hitchhiking and hitchwiki tags
+	tags = append(tags,
+		nostr.Tag{"t", "hitchhiking"},
+		nostr.Tag{"t", "hitchwiki"},
+	)
 
 	if geoInfo != nil {
 		tags = append(tags,
@@ -443,7 +626,6 @@ func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.
 			nostr.Tag{"L", "open-location-code"},
 			nostr.Tag{"l", geoInfo.PlusCode, "open-location-code"},
 			nostr.Tag{"g", geoInfo.Geohash},
-			nostr.Tag{"t", "hitchwiki"},
 		)
 	}
 
@@ -466,13 +648,14 @@ func (d *Daemon) createHitchmapEvent(entry HitchmapEntry) *nostr.Event {
 	if entry.Description != nil {
 		description = *entry.Description
 	}
-	content := fmt.Sprintf("hitchmap.com %s: %s", hitchhikerName, description)
+	content := fmt.Sprintf("hitchmap.com %s: %s #hitchhiking", hitchhikerName, description)
 
 	plusCode := olc.Encode(entry.StartLat, entry.StartLng, 10)
 	geohash := geohash.Encode(entry.StartLat, entry.StartLng)
 
 	tags := nostr.Tags{
 		{"d", fmt.Sprintf("%d", entry.ID)},
+		{"g", fmt.Sprintf("%.6f,%.6f", entry.StartLat, entry.StartLng)}, // lat,lng coordinates
 		{"L", "open-location-code"},
 		{"l", plusCode, "open-location-code"},
 		{"L", "open-location-code-prefix"},
@@ -485,7 +668,7 @@ func (d *Daemon) createHitchmapEvent(entry HitchmapEntry) *nostr.Event {
 	}
 
 	event := &nostr.Event{
-		Kind:      30399, // Custom kind for hitchhiking
+		Kind:      nostr.KindTextNote, // Use kind 1 for text notes
 		Content:   content,
 		Tags:      tags,
 		CreatedAt: nostr.Now(),
@@ -497,6 +680,7 @@ func (d *Daemon) createHitchmapEvent(entry HitchmapEntry) *nostr.Event {
 func (d *Daemon) postEvent(event *nostr.Event, id string) {
 	if d.config.DryRun {
 		log.Printf("[DRY RUN] Would post: %s", event.Content)
+		log.Printf("[DRY RUN] Tags: %v", event.Tags)
 		d.markPosted(id)
 		return
 	}
@@ -515,13 +699,179 @@ func (d *Daemon) postEvent(event *nostr.Event, id string) {
 func (d *Daemon) isPosted(id string) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	return d.posted[id]
+	// Check both session-posted and existing notes from relays
+	return d.posted[id] || d.existingNotes[id]
 }
 
 func (d *Daemon) markPosted(id string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.posted[id] = true
+}
+
+func (d *Daemon) fetchExistingNotes() {
+	if d.nostr == nil {
+		log.Printf("No Nostr client available for fetching existing notes")
+		return
+	}
+
+	log.Printf("Fetching existing notes from relays for duplicate checking...")
+
+	// Create filter for our pubkey's text notes
+	filters := []nostr.Filter{{
+		Authors: []string{d.nostr.pk},
+		Kinds:   []int{int(nostr.KindTextNote), 30399}, // Text notes and hitchmap notes
+		Limit:   1000,                                  // Get more notes to check against
+	}}
+
+	// Query all relays
+	for _, relay := range d.nostr.relays {
+		events, err := relay.QuerySync(context.Background(), filters[0])
+		if err != nil {
+			log.Printf("Error querying relay %s: %v", relay.URL, err)
+			continue
+		}
+
+		log.Printf("Found %d existing events from relay %s", len(events), relay.URL)
+
+		// Process events to extract IDs
+		for _, event := range events {
+			// Check for Hitchwiki entries (r tag with hitchwiki URL)
+			for _, tag := range event.Tags {
+				if len(tag) >= 2 && tag[0] == "r" {
+					if strings.Contains(tag[1], "hitchwiki.org") {
+						d.mu.Lock()
+						d.existingNotes[tag[1]] = true
+						d.mu.Unlock()
+						break
+					}
+				}
+			}
+
+			// Check for Hitchmap entries (look for hitchmap tag and d tag)
+			hasHitchmapTag := false
+			hitchmapID := ""
+			for _, tag := range event.Tags {
+				if len(tag) >= 2 && tag[0] == "t" && tag[1] == "hitchmap" {
+					hasHitchmapTag = true
+				}
+				if len(tag) >= 2 && tag[0] == "d" {
+					hitchmapID = tag[1]
+				}
+			}
+			if hasHitchmapTag && hitchmapID != "" {
+				d.mu.Lock()
+				d.existingNotes[fmt.Sprintf("hitchmap_%s", hitchmapID)] = true
+				d.mu.Unlock()
+			}
+		}
+	}
+
+	log.Printf("Found %d existing notes for duplicate checking", len(d.existingNotes))
+}
+
+func (d *Daemon) ensureProfileExists() {
+	if d.nostr == nil {
+		log.Printf("No Nostr client available for profile check")
+		return
+	}
+
+	log.Printf("Checking for existing profile...")
+
+	// Query for existing profile events (kind 0)
+	filters := []nostr.Filter{{
+		Authors: []string{d.nostr.pk},
+		Kinds:   []int{int(nostr.KindProfileMetadata)},
+		Limit:   1,
+	}}
+
+	// Check all relays for existing profile
+	var existingProfile *nostr.Event
+	for _, relay := range d.nostr.relays {
+		events, err := relay.QuerySync(context.Background(), filters[0])
+		if err != nil {
+			log.Printf("Error querying relay %s for profile: %v", relay.URL, err)
+			continue
+		}
+		if len(events) > 0 {
+			existingProfile = events[0]
+			log.Printf("Found existing profile on relay %s", relay.URL)
+			break
+		}
+	}
+
+	// Check if existing profile has correct NIP-05 and name
+	if existingProfile != nil {
+		// Parse the profile content
+		var profile map[string]interface{}
+		if err := json.Unmarshal([]byte(existingProfile.Content), &profile); err == nil {
+			nip05, _ := profile["nip05"].(string)
+			name, _ := profile["name"].(string)
+
+			if nip05 == "nostrhitch@hitchwiki.org" && name == "nostrhitchbot" {
+				log.Printf("Profile already exists with correct NIP-05 and name: %s", name)
+				return
+			}
+
+			log.Printf("Profile needs update - NIP-05: %s, Name: %s", nip05, name)
+		}
+		log.Printf("Existing profile found but needs updating...")
+	}
+
+	// Create or update profile
+	d.createProfile()
+}
+
+func (d *Daemon) createProfile() {
+	log.Printf("Creating/updating profile with NIP-05 verification...")
+
+	// Create profile data
+	profile := map[string]interface{}{
+		"name":            "nostrhitchbot",
+		"about":           "Bot that posts Hitchwiki and Hitchmap updates to Nostr. Follows recent changes from hitchwiki.org and hitchmap.com data.",
+		"website":         "https://hitchwiki.org",
+		"picture":         "https://hitchwiki.org/images/thumb/8/8a/Hitchhiking.svg/200px-Hitchhiking.svg.png",
+		"nip05":           "nostrhitch@hitchwiki.org",
+		"lud16":           "nostrhitch@hitchwiki.org", // Lightning address (same as nip05)
+		"bot":             true,
+		"bot_description": "Posts Hitchwiki recent changes and Hitchmap data to Nostr relays",
+	}
+
+	profileJSON, err := json.Marshal(profile)
+	if err != nil {
+		log.Printf("Error marshaling profile: %v", err)
+		return
+	}
+
+	// Create the profile event
+	event := &nostr.Event{
+		Kind:      nostr.KindProfileMetadata,
+		Content:   string(profileJSON),
+		CreatedAt: nostr.Now(),
+	}
+
+	// Sign the event
+	event.Sign(d.nostr.sk)
+
+	// Publish to all relays
+	successCount := 0
+	for _, relay := range d.nostr.relays {
+		err := relay.Publish(context.Background(), *event)
+		if err != nil {
+			log.Printf("Error publishing profile to relay %s: %v", relay.URL, err)
+		} else {
+			successCount++
+			log.Printf("Profile published to relay %s", relay.URL)
+		}
+	}
+
+	if successCount > 0 {
+		log.Printf("Profile created/updated successfully! Published to %d/%d relays", successCount, len(d.nostr.relays))
+		log.Printf("Profile content: %s", string(profileJSON))
+		log.Printf("NIP-05 verification: nostrhitch@hitchwiki.org")
+	} else {
+		log.Printf("Failed to publish profile to any relay")
+	}
 }
 
 // Helper functions
@@ -537,29 +887,123 @@ func decodeNsec(nsec string) (string, error) {
 }
 
 func extractXML(content, tag string) string {
-	re := regexp.MustCompile(fmt.Sprintf(`<%s>(.*?)</%s>`, tag, tag))
-	matches := re.FindStringSubmatch(content)
-	if len(matches) > 1 {
-		return matches[1]
+	// Handle both content and attributes
+	if strings.Contains(tag, " ") {
+		// Handle attributes like "link href"
+		parts := strings.Split(tag, " ")
+		tagName := parts[0]
+		attrName := parts[1]
+
+		// Look for <tagName ... attrName="value" ...>
+		re := regexp.MustCompile(fmt.Sprintf(`<%s[^>]*%s="([^"]*)"`, tagName, attrName))
+		matches := re.FindStringSubmatch(content)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	} else {
+		// Handle content like <tag>content</tag>
+		re := regexp.MustCompile(fmt.Sprintf(`<%s>(.*?)</%s>`, tag, tag))
+		matches := re.FindStringSubmatch(content)
+		if len(matches) > 1 {
+			return matches[1]
+		}
 	}
 	return ""
 }
 
 func (d *Daemon) extractArticleURL(diffURL string) string {
-	// Extract title from diff URL and create article URL
-	// Simplified implementation
-	return strings.Replace(diffURL, "&diff=", "", 1)
+	// Extract title from diff URL and preserve the language
+	// Example: https://hitchwiki.org/ru/index.php?title=Куба&diff=114734&oldid=109364
+	// Should become: https://hitchwiki.org/ru/Куба
+
+	// Parse URL like Python does with urllib.parse
+	if diffURL == "" {
+		return ""
+	}
+
+	// Extract language from URL (e.g., /ru/ from https://hitchwiki.org/ru/index.php)
+	langStart := strings.Index(diffURL, "hitchwiki.org/")
+	if langStart == -1 {
+		return ""
+	}
+	langStart += 14 // len("hitchwiki.org/")
+
+	langEnd := strings.Index(diffURL[langStart:], "/")
+	if langEnd == -1 {
+		return ""
+	}
+	langEnd += langStart
+
+	language := diffURL[langStart:langEnd]
+
+	// Find title parameter
+	titleStart := strings.Index(diffURL, "title=")
+	if titleStart == -1 {
+		return ""
+	}
+	titleStart += 6 // len("title=")
+
+	// Find the end of the title (before &diff= or end of string)
+	titleEnd := strings.Index(diffURL[titleStart:], "&")
+	if titleEnd == -1 {
+		titleEnd = len(diffURL)
+	} else {
+		titleEnd += titleStart
+	}
+
+	title := diffURL[titleStart:titleEnd]
+
+	// Create the article URL with the correct language
+	return fmt.Sprintf("https://hitchwiki.org/%s/%s", language, title)
+}
+
+func (d *Daemon) cleanAuthor(author string) string {
+	// Clean author name exactly like Python
+	// Remove HTML tags
+	re := regexp.MustCompile(`<[^>]+>`)
+	clean := re.ReplaceAllString(author, "")
+
+	// Remove special characters except word chars, spaces, and hyphens
+	re = regexp.MustCompile(`[^\w\s-]`)
+	clean = re.ReplaceAllString(clean, "")
+
+	return strings.TrimSpace(clean)
 }
 
 func (d *Daemon) cleanSummary(summary string) string {
-	// Remove HTML tags and clean up
+	// Clean up HTML and extract meaningful content exactly like Python
+	// Remove HTML tags
 	re := regexp.MustCompile(`<[^>]+>`)
 	clean := re.ReplaceAllString(summary, "")
+
+	// Normalize whitespace
+	re = regexp.MustCompile(`\s+`)
+	clean = re.ReplaceAllString(clean, " ")
 	clean = strings.TrimSpace(clean)
+
+	// Try to extract just the meaningful part before the diff table
+	if strings.Contains(clean, "Revision as of") {
+		parts := strings.Split(clean, "Revision as of")
+		clean = strings.TrimSpace(parts[0])
+	}
+
+	// Truncate if still too long
 	if len(clean) > 300 {
 		clean = clean[:300] + "..."
 	}
+
 	return clean
+}
+
+func (d *Daemon) normalizeWhitespace(text string) string {
+	// Normalize whitespace exactly like Python, but preserve double newlines
+	// First, normalize spaces within each line
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		re := regexp.MustCompile(`\s+`)
+		lines[i] = strings.TrimSpace(re.ReplaceAllString(line, " "))
+	}
+	return strings.Join(lines, "\n")
 }
 
 type GeoInfo struct {
@@ -569,8 +1013,62 @@ type GeoInfo struct {
 	Geohash  string
 }
 
-func (d *Daemon) fetchGeoInfo(url string) *GeoInfo {
-	// Simplified geo fetching - in production, implement proper parsing
+func (d *Daemon) fetchGeoInfo(originalLink string) *GeoInfo {
+	// First extract article URL from the original link (like Python)
+	articleURL := d.extractArticleURL(originalLink)
+	if articleURL == "" {
+		return nil
+	}
+
+	// Fetch the actual article page (like Python)
+	resp, err := http.Get(articleURL)
+	if err != nil {
+		log.Printf("Error fetching page for geo info: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading page content: %v", err)
+		return nil
+	}
+
+	content := string(body)
+
+	// Use the exact same patterns as Python, but also handle HTML-encoded format
+	mapPatterns := []string{
+		`<map[^>]*lat=['"]([0-9.-]+)['"][^>]*lng=['"]([0-9.-]+)['"]`,
+		`&lt;map[^>]*lat=['"]([0-9.-]+)['"][^>]*lng=['"]([0-9.-]+)['"]`, // HTML-encoded
+		`<div[^>]*class="[^"]*map[^"]*"[^>]*data-lat="([^"]+)"[^>]*data-lng="([^"]+)"`,
+		`\|map\s*=\s*<map\s+lat="([^"]+)"\s+lng="([^"]+)"`, // Fallback for raw format
+		`&lt;map lat='([0-9.-]+)' lng='([0-9.-]+)'`,        // HTML-encoded with single quotes
+		`<map lat='([0-9.-]+)' lng='([0-9.-]+)'`,           // Direct format with single quotes
+	}
+
+	for _, pattern := range mapPatterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindStringSubmatch(content)
+		if len(matches) == 3 {
+			if lat, err := strconv.ParseFloat(matches[1], 64); err == nil {
+				if lng, err := strconv.ParseFloat(matches[2], 64); err == nil {
+					plusCode := olc.Encode(lat, lng, 10)
+					geohash := geohash.Encode(lat, lng)
+					return &GeoInfo{
+						Lat:      lat,
+						Lng:      lng,
+						PlusCode: plusCode,
+						Geohash:  geohash,
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
