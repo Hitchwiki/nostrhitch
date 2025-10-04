@@ -29,14 +29,14 @@ import (
 
 // Config holds all configuration
 type Config struct {
-	Nsec          string   `json:"nsec"`
-	PostToRelays  bool     `json:"post_to_relays"`
-	Relays        []string `json:"relays"`
-	HWInterval    int      `json:"hw_interval"`
-	HitchInterval int      `json:"hitch_interval"`
-	Debug         bool     `json:"debug"`
-	DryRun        bool     `json:"dry_run"`
-	SecretHitchwikiURL  string   `json:"secret_hitchwiki_url,omitempty"` // Alternative Hitchwiki domain
+	Nsec               string   `json:"nsec"`
+	PostToRelays       bool     `json:"post_to_relays"`
+	Relays             []string `json:"relays"`
+	HWInterval         int      `json:"hw_interval"`
+	HitchInterval      int      `json:"hitch_interval"`
+	Debug              bool     `json:"debug"`
+	DryRun             bool     `json:"dry_run"`
+	SecretHitchwikiURL string   `json:"secret_hitchwiki_url,omitempty"` // Alternative Hitchwiki domain
 }
 
 // HTTPCacheEntry represents a cached HTTP response
@@ -1226,21 +1226,18 @@ func (d *Daemon) fetchGeoInfo(originalLink string) *GeoInfo {
 		return nil
 	}
 
-	// Fetch the actual article page
-	resp, err := http.Get(articleURL)
+	// Convert hitchwiki.org URL to secret URL if configured
+	fetchURL := articleURL
+	if d.config.SecretHitchwikiURL != "" {
+		// Replace hitchwiki.org with secret URL for fetching
+		fetchURL = strings.Replace(articleURL, "https://hitchwiki.org", d.config.SecretHitchwikiURL, 1)
+		log.Printf("Using secret URL for geo fetch: %s", fetchURL)
+	}
+
+	// Fetch the actual article page using cached HTTP get
+	body, err := d.cachedHTTPGet(fetchURL)
 	if err != nil {
 		log.Printf("Error fetching page for geo info: %v", err)
-		return nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Error reading page content: %v", err)
 		return nil
 	}
 
