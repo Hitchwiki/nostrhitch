@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  nostrhitch:
+    build: .
+    container_name: nostrhitch-daemon
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/root/config.json:ro
+      - ./logs:/root/logs
+      - ./hitchmap-dumps:/root/hitchmap-dumps
+    environment:
+      - TZ=UTC
+    # Uncomment if you want to run in daemon mode
+    # command: ["./nostrhitch-daemon"]
+    # Or run once for testing
+    command: ["./nostrhitch-daemon", "--once"]
