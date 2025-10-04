@@ -296,14 +296,7 @@ func (d *Daemon) processHitchwiki() {
 
 	// Process multiple languages - comprehensive list of Hitchwiki languages
 	languages := []string{
-		"en", "de", "fr", "es", "it", "pt", "pl", "ru", "nl", "sv", "no", "da", "fi",
-		"cs", "sk", "hu", "ro", "bg", "hr", "sl", "et", "lv", "lt", "el", "tr", "ar",
-		"he", "fa", "hi", "bn", "th", "vi", "ko", "ja", "zh", "ca", "eu", "gl", "is",
-		"mt", "cy", "ga", "mk", "sq", "sr", "bs", "uk", "be", "ka", "hy", "az", "kk",
-		"uz", "ky", "tg", "mn", "my", "km", "lo", "si", "ne", "ur", "ta", "te", "kn",
-		"ml", "gu", "pa", "or", "as", "mr", "sa", "sd", "dv", "bo", "dz",
-		"ti", "am", "om", "so", "sw", "zu", "xh", "af", "st", "tn", "ts", "ve", "nr",
-		"ss", "nso",
+		"en", "de", "es", "fi", "fr", "he", "hr", "it", "lt", "nl", "pl", "pt", "ro", "ru", "tr", "zh",
 	}
 
 	for _, lang := range languages {
@@ -332,14 +325,7 @@ func (d *Daemon) processHitchwikiForce(limit int) {
 
 	// Process multiple languages
 	languages := []string{
-		"en", "de", "fr", "es", "it", "pt", "pl", "ru", "nl", "sv", "no", "da", "fi",
-		"cs", "sk", "hu", "ro", "bg", "hr", "sl", "et", "lv", "lt", "el", "tr", "ar",
-		"he", "fa", "hi", "bn", "th", "vi", "ko", "ja", "zh", "ca", "eu", "gl", "is",
-		"mt", "cy", "ga", "mk", "sq", "sr", "bs", "uk", "be", "ka", "hy", "az", "kk",
-		"uz", "ky", "tg", "mn", "my", "km", "lo", "si", "ne", "ur", "ta", "te", "kn",
-		"ml", "gu", "pa", "or", "as", "mr", "sa", "sd", "dv", "bo", "dz",
-		"ti", "am", "om", "so", "sw", "zu", "xh", "af", "st", "tn", "ts", "ve", "nr",
-		"ss", "nso",
+		"en", "de", "es", "fi", "fr", "he", "hr", "it", "lt", "nl", "pl", "pt", "ro", "ru", "tr", "zh",
 	}
 
 	postedCount := 0
