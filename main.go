@@ -610,9 +610,9 @@ func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 	content := string(data)
 	log.Printf("Response length: %d bytes", len(content))
 
-	// Debug: show first 500 characters
-	if len(content) > 500 {
-		log.Printf("First 500 chars: %s", content[:500])
+	// Debug: show first 1000 characters to see XML structure
+	if len(content) > 1000 {
+		log.Printf("First 1000 chars: %s", content[:1000])
 	} else {
 		log.Printf("Full content: %s", content)
 	}
@@ -645,7 +645,7 @@ func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 		entries = append(entries, entry)
 
 		if i < 3 { // Log first few entries for debugging
-			log.Printf("Entry %d: %s", i+1, entry.Title)
+			log.Printf("Entry %d: Title='%s', Link='%s', Author='%s', ID='%s'", i+1, entry.Title, entry.Link, entry.Author, entry.ID)
 		}
 	}
 
@@ -777,6 +777,7 @@ func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.
 	}
 
 	var content string
+	log.Printf("DEBUG: articleURL='%s', authorClean='%s', title='%s'", articleURL, authorClean, entry.Title)
 	if articleURL != "" && authorClean != "" {
 		content = fmt.Sprintf("📝 %s edited %s 📄 #hitchhiking", authorClean, articleURL)
 	} else if articleURL != "" {
@@ -784,6 +785,7 @@ func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.
 	} else {
 		content = fmt.Sprintf("📝 %s 📄 #hitchhiking", entry.Title)
 	}
+	log.Printf("DEBUG: Final content='%s'", content)
 
 	// Get geo info (pass original link)
 	geoInfo := d.fetchGeoInfo(entry.Link)
@@ -1127,20 +1129,14 @@ func (d *Daemon) extractArticleURL(diffURL string) string {
 		return ""
 	}
 
-	// Extract language from URL (e.g., /ru/ from https://hitchwiki.org/ru/index.php)
-	langStart := strings.Index(diffURL, "hitchwiki.org/")
-	if langStart == -1 {
+	// Extract language from URL using regex to handle both hitchwiki.org and secret domains
+	// Look for pattern like /en/, /de/, /ru/, etc.
+	langRegex := regexp.MustCompile(`/([a-z]{2})/`)
+	langMatches := langRegex.FindStringSubmatch(diffURL)
+	if len(langMatches) < 2 {
 		return ""
 	}
-	langStart += 14 // len("hitchwiki.org/")
-
-	langEnd := strings.Index(diffURL[langStart:], "/")
-	if langEnd == -1 {
-		return ""
-	}
-	langEnd += langStart
-
-	language := diffURL[langStart:langEnd]
+	language := langMatches[1]
 
 	// Find title parameter
 	titleStart := strings.Index(diffURL, "title=")
