@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/hex"
@@ -35,6 +36,7 @@ type Config struct {
 	HitchInterval int      `json:"hitch_interval"`
 	Debug         bool     `json:"debug"`
 	DryRun        bool     `json:"dry_run"`
+	HitchwikiURL  string   `json:"hitchwiki_url,omitempty"` // Alternative Hitchwiki domain
 }
 
 // HTTPCacheEntry represents a cached HTTP response
@@ -214,9 +216,14 @@ func (d *Daemon) run() {
 	signal.Notify(sigChan, os.Interrupt, os.Kill)
 
 	go func() {
-		<-sigChan
-		log.Println("Shutting down...")
+		sig := <-sigChan
+		log.Printf("Received signal %v, shutting down...", sig)
 		d.cancel()
+
+		// If we get another signal, force exit
+		sig = <-sigChan
+		log.Printf("Received second signal %v, force exiting...", sig)
+		os.Exit(1)
 	}()
 
 	// Start both tasks concurrently
@@ -233,7 +240,20 @@ func (d *Daemon) run() {
 		d.runHitchmapTask()
 	}()
 
-	wg.Wait()
+	// Wait for either context cancellation or all tasks to complete
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-d.ctx.Done():
+		log.Println("Context cancelled, stopping daemon...")
+	case <-done:
+		log.Println("All tasks completed")
+	}
+
 	log.Println("Daemon stopped")
 }
 
@@ -303,6 +323,10 @@ func (d *Daemon) runHitchmapTask() {
 func (d *Daemon) processHitchwiki() {
 	log.Println("Processing Hitchwiki recent changes...")
 
+	if d.config.HitchwikiURL != "" {
+		log.Printf("Using alternative Hitchwiki URL: %s", d.config.HitchwikiURL)
+	}
+
 	// Process multiple languages - comprehensive list of Hitchwiki languages
 	languages := []string{
 		"en", "de", "es", "fi", "fr", "he", "hr", "it", "lt", "nl", "pl", "pt", "ro", "ru", "tr", "zh",
@@ -315,14 +339,21 @@ func (d *Daemon) processHitchwiki() {
 
 		// Add delay between language requests to respect rate limits
 		if i < len(languages)-1 {
-			log.Printf("Waiting 2 seconds before next language...")
-			time.Sleep(2 * time.Second)
+			log.Printf("Waiting 10 seconds before next language...")
+			select {
+			case <-d.ctx.Done():
+				log.Println("Context cancelled, stopping language processing")
+				return
+			case <-time.After(10 * time.Second):
+				// Continue with next language
+			}
 		}
 
 		// Process all entries (no artificial limit)
+		skipped := 0
 		for i, entry := range entries {
 			if d.isPosted(entry.ID) {
-				log.Printf("Skipping already posted: %s", entry.ID)
+				skipped++
 				continue
 			}
 
@@ -331,6 +362,10 @@ func (d *Daemon) processHitchwiki() {
 			if event != nil {
 				d.postEvent(event, entry.ID)
 			}
+		}
+
+		if skipped > 0 {
+			log.Printf("Skipped %d already posted Hitchwiki entries for %s", skipped, lang)
 		}
 	}
 }
@@ -400,9 +435,10 @@ func (d *Daemon) processHitchmap() {
 	entries := d.fetchHitchmap()
 	log.Printf("Fetched %d Hitchmap entries", len(entries))
 
+	skipped := 0
 	for _, entry := range entries {
 		if d.isPosted(fmt.Sprintf("hitchmap_%d", entry.ID)) {
-			log.Printf("Skipping already posted: hitchmap_%d", entry.ID)
+			skipped++
 			continue
 		}
 
@@ -411,6 +447,10 @@ func (d *Daemon) processHitchmap() {
 		if event != nil {
 			d.postEvent(event, fmt.Sprintf("hitchmap_%d", entry.ID))
 		}
+	}
+
+	if skipped > 0 {
+		log.Printf("Skipped %d already posted Hitchmap entries", skipped)
 	}
 }
 
@@ -426,25 +466,116 @@ func (d *Daemon) cachedHTTPGet(url string) ([]byte, error) {
 	d.mu.RUnlock()
 
 	// Add delay before each request to respect rate limits
-	time.Sleep(2 * time.Second)
+	select {
+	case <-d.ctx.Done():
+		return nil, d.ctx.Err()
+	case <-time.After(5 * time.Second):
+		// Continue with request
+	}
 
-	// Create HTTP client with User-Agent to avoid bot detection
-	client := &http.Client{}
+	// Create HTTP client with comprehensive headers to bypass bot detection
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			DisableCompression: false, // Allow gzip compression
+		},
+	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
+	// Set comprehensive headers to mimic a real browser
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("DNT", "1")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "none")
+	req.Header.Set("Cache-Control", "max-age=0")
+
+	// Retry logic for failed requests
+	var resp *http.Response
+	var body []byte
+	maxRetries := 3
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		resp, err = client.Do(req)
+		if err != nil {
+			log.Printf("HTTP request attempt %d failed for URL %s: %v", attempt+1, url, err)
+			if attempt < maxRetries-1 {
+				select {
+				case <-d.ctx.Done():
+					return nil, d.ctx.Err()
+				case <-time.After(time.Duration(attempt+1) * 5 * time.Second):
+					// Continue with retry
+				}
+				continue
+			}
+			return nil, err
+		}
+
+		// Handle gzipped responses
+		var reader io.Reader = resp.Body
+		if resp.Header.Get("Content-Encoding") == "gzip" {
+			gzReader, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				log.Printf("Error creating gzip reader: %v", err)
+				resp.Body.Close()
+				if attempt < maxRetries-1 {
+					select {
+					case <-d.ctx.Done():
+						return nil, d.ctx.Err()
+					case <-time.After(time.Duration(attempt+1) * 5 * time.Second):
+						// Continue with retry
+					}
+					continue
+				}
+				return nil, err
+			}
+			defer gzReader.Close()
+			reader = gzReader
+		}
+
+		body, err = io.ReadAll(reader)
+		resp.Body.Close()
+
+		if err != nil {
+			log.Printf("Reading response attempt %d failed for URL %s: %v", attempt+1, url, err)
+			if attempt < maxRetries-1 {
+				select {
+				case <-d.ctx.Done():
+					return nil, d.ctx.Err()
+				case <-time.After(time.Duration(attempt+1) * 5 * time.Second):
+					// Continue with retry
+				}
+				continue
+			}
+			return nil, err
+		}
+
+		// Check if we got a valid response (not Cloudflare challenge)
+		if resp.StatusCode == 200 && !strings.Contains(string(body), "Just a moment") {
+			break
+		}
+
+		log.Printf("Got %d status or Cloudflare challenge on attempt %d for URL %s, retrying...", resp.StatusCode, attempt+1, url)
+		if attempt < maxRetries-1 {
+			select {
+			case <-d.ctx.Done():
+				return nil, d.ctx.Err()
+			case <-time.After(time.Duration(attempt+1) * 10 * time.Second):
+				// Continue with retry
+			}
+		}
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP request failed with status %d after %d attempts", resp.StatusCode, maxRetries)
 	}
 
 	// Cache the response
@@ -459,7 +590,15 @@ func (d *Daemon) cachedHTTPGet(url string) ([]byte, error) {
 }
 
 func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
-	url := fmt.Sprintf("https://hitchwiki.org/%s/api.php?hidebots=1&urlversion=1&days=7&limit=50&action=feedrecentchanges&feedformat=atom", lang)
+	// Use alternative Hitchwiki URL if configured, otherwise use default
+	var baseURL string
+	if d.config.HitchwikiURL != "" {
+		baseURL = d.config.HitchwikiURL
+		log.Printf("Using alternative Hitchwiki URL: %s", baseURL)
+	} else {
+		baseURL = "https://hitchwiki.org"
+	}
+	url := fmt.Sprintf("%s/%s/api.php?hidebots=1&urlversion=1&days=7&limit=50&action=feedrecentchanges&feedformat=atom", baseURL, lang)
 
 	log.Printf("Fetching from: %s", url)
 
