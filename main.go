@@ -815,7 +815,7 @@ func (d *Daemon) ensureProfileExists() {
 		}
 	}
 
-	// Check if existing profile has correct NIP-05, name, and website
+	// Check if existing profile has correct NIP-05, name, website, and picture
 	if existingProfile != nil {
 		// Parse the profile content
 		var profile map[string]interface{}
@@ -823,13 +823,14 @@ func (d *Daemon) ensureProfileExists() {
 			nip05, _ := profile["nip05"].(string)
 			name, _ := profile["name"].(string)
 			website, _ := profile["website"].(string)
+			picture, _ := profile["picture"].(string)
 
-			if nip05 == "nostrhitch@hitchwiki.org" && name == "nostrhitchbot" && website == "https://hitchwiki.org/en/Hitchwiki:Nostrhitch" {
-				log.Printf("Profile already exists with correct NIP-05, name, and website: %s", name)
+			if nip05 == "nostrhitch@hitchwiki.org" && name == "nostrhitchbot" && website == "https://hitchwiki.org/en/Hitchwiki:Nostrhitch" && picture == "https://hitchwiki.org/en/images/en/c/c1/Nostrhitch.jpg" {
+				log.Printf("Profile already exists with correct NIP-05, name, website, and picture: %s", name)
 				return
 			}
 
-			log.Printf("Profile needs update - NIP-05: %s, Name: %s, Website: %s", nip05, name, website)
+			log.Printf("Profile needs update - NIP-05: %s, Name: %s, Website: %s, Picture: %s", nip05, name, website, picture)
 		}
 		log.Printf("Existing profile found but needs updating...")
 	}
@@ -847,7 +848,7 @@ func (d *Daemon) createProfile() {
 		"name":            "nostrhitchbot",
 		"about":           "Bot that posts Hitchwiki and Hitchmap updates to Nostr. Follows recent changes from hitchwiki.org and hitchmap.com data.",
 		"website":         "https://hitchwiki.org/en/Hitchwiki:Nostrhitch",
-		"picture":         "https://hitchwiki.org/images/thumb/8/8a/Hitchhiking.svg/200px-Hitchhiking.svg.png",
+		"picture":         "https://hitchwiki.org/en/images/en/c/c1/Nostrhitch.jpg",
 		"nip05":           "nostrhitch@hitchwiki.org",
 		"lud16":           "nostrhitch@hitchwiki.org", // Lightning address (same as nip05)
 		"bot":             true,
@@ -865,6 +866,7 @@ func (d *Daemon) createProfile() {
 		Kind:      nostr.KindProfileMetadata,
 		Content:   string(profileJSON),
 		CreatedAt: nostr.Now(),
+		Tags:      nostr.Tags{{"nip05", "nostrhitch@hitchwiki.org"}},
 	}
 
 	// Sign the event
