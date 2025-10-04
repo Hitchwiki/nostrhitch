@@ -36,7 +36,7 @@ type Config struct {
 	HitchInterval int      `json:"hitch_interval"`
 	Debug         bool     `json:"debug"`
 	DryRun        bool     `json:"dry_run"`
-	HitchwikiURL  string   `json:"hitchwiki_url,omitempty"` // Alternative Hitchwiki domain
+	SecretHitchwikiURL  string   `json:"secret_hitchwiki_url,omitempty"` // Alternative Hitchwiki domain
 }
 
 // HTTPCacheEntry represents a cached HTTP response
@@ -323,8 +323,8 @@ func (d *Daemon) runHitchmapTask() {
 func (d *Daemon) processHitchwiki() {
 	log.Println("Processing Hitchwiki recent changes...")
 
-	if d.config.HitchwikiURL != "" {
-		log.Printf("Using alternative Hitchwiki URL: %s", d.config.HitchwikiURL)
+	if d.config.SecretHitchwikiURL != "" {
+		log.Printf("Using alternative Hitchwiki URL: %s", d.config.SecretHitchwikiURL)
 	}
 
 	// Process multiple languages - comprehensive list of Hitchwiki languages
@@ -592,8 +592,8 @@ func (d *Daemon) cachedHTTPGet(url string) ([]byte, error) {
 func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 	// Use alternative Hitchwiki URL if configured, otherwise use default
 	var baseURL string
-	if d.config.HitchwikiURL != "" {
-		baseURL = d.config.HitchwikiURL
+	if d.config.SecretHitchwikiURL != "" {
+		baseURL = d.config.SecretHitchwikiURL
 		log.Printf("Using alternative Hitchwiki URL: %s", baseURL)
 	} else {
 		baseURL = "https://hitchwiki.org"

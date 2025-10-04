@@ -32,11 +32,11 @@ Edit `config.json`:
   "relays": ["wss://relay.hitchwiki.org"],
   "hw_interval": 300,
   "hitch_interval": 86400,
-  "hitchwiki_url": "http://hitchwiki-other-access.example.net"
+  "secret_hitchwiki_url": "http://hitchwiki-other-access.example.net"
 }
 ```
 
-**Note**: The `hitchwiki_url` option allows you to use an alternative domain to bypass Cloudflare rate limiting. This should be kept private and not committed to the repository.
+**Note**: The `secret_hitchwiki_url` option allows you to use an alternative domain to bypass Cloudflare rate limiting. This should be kept private and not committed to the repository. All links in posted notes will still use the public hitchwiki.org domain.
 
 ### 3. Run
 ```bash
@@ -83,7 +83,7 @@ All settings in `config.json`:
 | `relays` | List of relay URLs | `["wss://relay.hitchwiki.org"]` |
 | `hw_interval` | Hitchwiki check interval (seconds) | `300` |
 | `hitch_interval` | Hitchmap check interval (seconds) | `86400` |
-| `hitchwiki_url` | Alternative Hitchwiki domain (bypass Cloudflare) | `""` |
+| `secret_hitchwiki_url` | Alternative Hitchwiki domain (bypass Cloudflare) | `""` |
 | `debug` | Enable debug logging | `false` |
 | `dry_run` | Test mode | `false` |
 

@@ -6,5 +6,5 @@
   ],
   "hw_interval": 300,
   "hitch_interval": 86400,
-  "hitchwiki_url": "http://hitchwiki-other-access.example.net"
+  "secret_hitchwiki_url": "http://hitchwiki-other-access.example.net"
 }
