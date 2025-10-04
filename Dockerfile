@@ -1,8 +1,12 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.21-bullseye AS builder
 
 # Install SQLite dependencies
-RUN apk add --no-cache sqlite-dev gcc musl-dev
+RUN apt-get update && apt-get install -y \
+    sqlite3 \
+    libsqlite3-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -19,10 +23,13 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o nostrhitch-daemon .
 
 # Final stage
-FROM alpine:latest
+FROM debian:bullseye-slim
 
 # Install ca-certificates and SQLite for HTTPS requests and database
-RUN apk --no-cache add ca-certificates tzdata sqlite
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/
 
