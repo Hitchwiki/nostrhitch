@@ -37,12 +37,19 @@ type Config struct {
 	DryRun        bool     `json:"dry_run"`
 }
 
+// HTTPCacheEntry represents a cached HTTP response
+type HTTPCacheEntry struct {
+	Data      []byte
+	Timestamp time.Time
+}
+
 // Daemon manages both tasks
 type Daemon struct {
 	config        *Config
 	nostr         *NostrClient
 	posted        map[string]bool
 	existingNotes map[string]bool // Track existing notes from relays
+	httpCache     map[string]HTTPCacheEntry // Cache for HTTP requests
 	mu            sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -169,6 +176,7 @@ func NewDaemon(config *Config) *Daemon {
 		config:        config,
 		posted:        make(map[string]bool),
 		existingNotes: make(map[string]bool),
+		httpCache:     make(map[string]HTTPCacheEntry),
 		ctx:           ctx,
 		cancel:        cancel,
 	}
@@ -300,10 +308,16 @@ func (d *Daemon) processHitchwiki() {
 		"en", "de", "es", "fi", "fr", "he", "hr", "it", "lt", "nl", "pl", "pt", "ro", "ru", "tr", "zh",
 	}
 
-	for _, lang := range languages {
+	for i, lang := range languages {
 		log.Printf("Fetching changes for language: %s", lang)
 		entries := d.fetchHitchwiki(lang)
 		log.Printf("Fetched %d Hitchwiki entries for %s", len(entries), lang)
+		
+		// Add delay between language requests to respect rate limits
+		if i < len(languages)-1 {
+			log.Printf("Waiting 2 seconds before next language...")
+			time.Sleep(2 * time.Second)
+		}
 
 		// Process all entries (no artificial limit)
 		for i, entry := range entries {
@@ -400,23 +414,58 @@ func (d *Daemon) processHitchmap() {
 	}
 }
 
+// cachedHTTPGet performs HTTP GET with 1-minute caching
+func (d *Daemon) cachedHTTPGet(url string) ([]byte, error) {
+	d.mu.RLock()
+	if entry, exists := d.httpCache[url]; exists {
+		if time.Since(entry.Timestamp) < time.Minute {
+			d.mu.RUnlock()
+			return entry.Data, nil
+		}
+	}
+	d.mu.RUnlock()
+
+	// Add delay before each request to respect rate limits
+	time.Sleep(2 * time.Second)
+
+	// Create HTTP client with User-Agent to avoid bot detection
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the response
+	d.mu.Lock()
+	d.httpCache[url] = HTTPCacheEntry{
+		Data:      body,
+		Timestamp: time.Now(),
+	}
+	d.mu.Unlock()
+
+	return body, nil
+}
+
 func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 	url := fmt.Sprintf("https://hitchwiki.org/%s/api.php?hidebots=1&urlversion=1&days=7&limit=50&action=feedrecentchanges&feedformat=atom", lang)
 
 	log.Printf("Fetching from: %s", url)
-	resp, err := http.Get(url)
+	
+	data, err := d.cachedHTTPGet(url)
 	if err != nil {
 		log.Printf("Error fetching Hitchwiki: %v", err)
-		return nil
-	}
-	defer resp.Body.Close()
-
-	log.Printf("Response status: %s", resp.Status)
-
-	// Simple XML parsing - in production, use proper XML parser
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Error reading response: %v", err)
 		return nil
 	}
 	content := string(data)
@@ -559,11 +608,10 @@ func (d *Daemon) cleanupOldHitchmapDumps(currentFile string) {
 }
 
 func (d *Daemon) downloadFile(url, filename string) error {
-	resp, err := http.Get(url)
+	data, err := d.cachedHTTPGet(url)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
 	file, err := os.Create(filename)
 	if err != nil {
@@ -571,7 +619,7 @@ func (d *Daemon) downloadFile(url, filename string) error {
 	}
 	defer file.Close()
 
-	_, err = io.Copy(file, resp.Body)
+	_, err = file.Write(data)
 	return err
 }
 
