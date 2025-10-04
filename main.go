@@ -611,10 +611,12 @@ func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 	log.Printf("Response length: %d bytes", len(content))
 
 	// Debug: show first 1000 characters to see XML structure
-	if len(content) > 1000 {
-		log.Printf("First 1000 chars: %s", content[:1000])
-	} else {
-		log.Printf("Full content: %s", content)
+	if d.config.Debug {
+		if len(content) > 1000 {
+			log.Printf("First 1000 chars: %s", content[:1000])
+		} else {
+			log.Printf("Full content: %s", content)
+		}
 	}
 
 	var entries []HitchwikiEntry
@@ -644,7 +646,7 @@ func (d *Daemon) fetchHitchwiki(lang string) []HitchwikiEntry {
 		}
 		entries = append(entries, entry)
 
-		if i < 3 { // Log first few entries for debugging
+		if d.config.Debug && i < 3 { // Log first few entries for debugging
 			log.Printf("Entry %d: Title='%s', Link='%s', Author='%s', ID='%s'", i+1, entry.Title, entry.Link, entry.Author, entry.ID)
 		}
 	}
@@ -777,7 +779,9 @@ func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.
 	}
 
 	var content string
-	log.Printf("DEBUG: articleURL='%s', authorClean='%s', title='%s'", articleURL, authorClean, entry.Title)
+	if d.config.Debug {
+		log.Printf("DEBUG: articleURL='%s', authorClean='%s', title='%s'", articleURL, authorClean, entry.Title)
+	}
 	if articleURL != "" && authorClean != "" {
 		content = fmt.Sprintf("📝 %s edited %s 📄 #hitchhiking", authorClean, articleURL)
 	} else if articleURL != "" {
@@ -785,7 +789,9 @@ func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.
 	} else {
 		content = fmt.Sprintf("📝 %s 📄 #hitchhiking", entry.Title)
 	}
-	log.Printf("DEBUG: Final content='%s'", content)
+	if d.config.Debug {
+		log.Printf("DEBUG: Final content='%s'", content)
+	}
 
 	// Get geo info (pass original link)
 	geoInfo := d.fetchGeoInfo(entry.Link)
@@ -904,7 +910,12 @@ func (d *Daemon) isPosted(id string) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	// Check both session-posted and existing notes from relays
-	return d.posted[id] || d.existingNotes[id]
+	sessionPosted := d.posted[id]
+	relayPosted := d.existingNotes[id]
+	if d.config.Debug && (sessionPosted || relayPosted) {
+		log.Printf("Skipping already posted: %s (session: %v, relay: %v)", id, sessionPosted, relayPosted)
+	}
+	return sessionPosted || relayPosted
 }
 
 func (d *Daemon) markPosted(id string) {
@@ -924,8 +935,8 @@ func (d *Daemon) fetchExistingNotes() {
 	// Create filter for our pubkey's text notes
 	filters := []nostr.Filter{{
 		Authors: []string{d.nostr.pk},
-		Kinds:   []int{int(nostr.KindTextNote), 30399}, // Text notes and hitchmap notes
-		Limit:   1000,                                  // Get more notes to check against
+		Kinds:   []int{int(nostr.KindTextNote)}, // All text notes (both Hitchwiki and Hitchmap)
+		Limit:   1000,                           // Get more notes to check against
 	}}
 
 	// Query all relays
@@ -964,9 +975,13 @@ func (d *Daemon) fetchExistingNotes() {
 				}
 			}
 			if hasHitchmapTag && hitchmapID != "" {
+				noteID := fmt.Sprintf("hitchmap_%s", hitchmapID)
 				d.mu.Lock()
-				d.existingNotes[fmt.Sprintf("hitchmap_%s", hitchmapID)] = true
+				d.existingNotes[noteID] = true
 				d.mu.Unlock()
+				if d.config.Debug {
+					log.Printf("Found existing Hitchmap note: %s", noteID)
+				}
 			}
 		}
 	}
