@@ -815,20 +815,21 @@ func (d *Daemon) ensureProfileExists() {
 		}
 	}
 
-	// Check if existing profile has correct NIP-05 and name
+	// Check if existing profile has correct NIP-05, name, and website
 	if existingProfile != nil {
 		// Parse the profile content
 		var profile map[string]interface{}
 		if err := json.Unmarshal([]byte(existingProfile.Content), &profile); err == nil {
 			nip05, _ := profile["nip05"].(string)
 			name, _ := profile["name"].(string)
+			website, _ := profile["website"].(string)
 
-			if nip05 == "nostrhitch@hitchwiki.org" && name == "nostrhitchbot" {
-				log.Printf("Profile already exists with correct NIP-05 and name: %s", name)
+			if nip05 == "nostrhitch@hitchwiki.org" && name == "nostrhitchbot" && website == "https://hitchwiki.org/en/Hitchwiki:Nostrhitch" {
+				log.Printf("Profile already exists with correct NIP-05, name, and website: %s", name)
 				return
 			}
 
-			log.Printf("Profile needs update - NIP-05: %s, Name: %s", nip05, name)
+			log.Printf("Profile needs update - NIP-05: %s, Name: %s, Website: %s", nip05, name, website)
 		}
 		log.Printf("Existing profile found but needs updating...")
 	}
@@ -839,12 +840,13 @@ func (d *Daemon) ensureProfileExists() {
 
 func (d *Daemon) createProfile() {
 	log.Printf("Creating/updating profile with NIP-05 verification...")
+	// Note: Profile updates always happen regardless of dry-run mode
 
 	// Create profile data
 	profile := map[string]interface{}{
 		"name":            "nostrhitchbot",
 		"about":           "Bot that posts Hitchwiki and Hitchmap updates to Nostr. Follows recent changes from hitchwiki.org and hitchmap.com data.",
-		"website":         "https://hitchwiki.org",
+		"website":         "https://hitchwiki.org/en/Hitchwiki:Nostrhitch",
 		"picture":         "https://hitchwiki.org/images/thumb/8/8a/Hitchhiking.svg/200px-Hitchhiking.svg.png",
 		"nip05":           "nostrhitch@hitchwiki.org",
 		"lud16":           "nostrhitch@hitchwiki.org", // Lightning address (same as nip05)
