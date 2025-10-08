@@ -1,28 +1,37 @@
 # Nostr Hitchhiking Bot
 
-A minimal, efficient Go daemon that publishes Hitchwiki and Hitchmap content to Nostr relays.
-
-## Features
-
-- **Single Binary**: No dependencies, ~8MB statically linked
-- **Multi-language Support**: Fetches from all 17 Hitchwiki language versions
-- **Concurrent Processing**: Both tasks run simultaneously using goroutines
-- **Duplicate Prevention**: Relay-based duplicate checking
-- **NIP-05 Verification**: Automatic profile management
-- **Easy Deployment**: Just copy one file
-- **Systemd Ready**: Works perfectly with systemd
+A Go daemon that publishes Hitchwiki and Hitchmap content to Nostr relays.
 
 ## Quick Start
 
-### 1. Build
+### Local Development
 ```bash
-make build
+# Build
+go build -o nostrhitch-daemon main.go
+
+# Configure
+cp config.json.example config.json
+# Edit config.json with your nsec key and relay URLs
+
+# Run
+./nostrhitch-daemon -once          # Test once
+./nostrhitch-daemon -dry-run       # Test without posting
+./nostrhitch-daemon                # Run daemon
 ```
 
-### 2. Configure
+### Docker
 ```bash
-cp config.json.example config.json
+# Run with Docker
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Reload after config changes
+docker-compose restart
 ```
+
+## Configuration
 
 Edit `config.json`:
 ```json
@@ -32,193 +41,64 @@ Edit `config.json`:
   "relays": ["wss://relay.hitchwiki.org"],
   "hw_interval": 300,
   "hitch_interval": 86400,
-  "secret_hitchwiki_url": "http://hitchwiki-other-access.example.net"
+  "secret_hitchwiki_url": "http://hitchwiki-alternative.example.net"
 }
 ```
 
-**Note**: The `secret_hitchwiki_url` option allows you to use an alternative domain to bypass Cloudflare rate limiting. This should be kept private and not committed to the repository. All links in posted notes will still use the public hitchwiki.org domain.
+## Features
 
-### 3. Run
-```bash
-# Run daemon
-make run
+- **Multi-language**: Fetches from 17 Hitchwiki language versions
+- **Duplicate Prevention**: Two-tier system prevents reposting
+- **Geo Tags**: Automatic location detection and plus codes
+- **Persistent Storage**: SQLite database survives container restarts
+- **NIP-05 Verification**: Automatic profile management
 
-# Test once
-make once
+## Duplicate Prevention
 
-# Debug mode
-make debug
+The bot uses a robust two-tier system to avoid posting duplicates:
 
-# Dry run
-make dry-run
-```
+### 1. Session Tracking
+- **In-memory map**: Tracks notes posted during current session
+- **Immediate prevention**: Skips already processed entries
 
-## Installation
+### 2. Relay-based Tracking  
+- **Startup scan**: Queries all relays for existing notes at startup
+- **Persistent detection**: Uses RSS entry IDs and database record IDs as unique keys
+- **Cross-session**: Prevents duplicates even after bot restarts
 
-### Quick Setup (Recommended)
-```bash
-# One-command setup
-sudo ./setup.sh
-
-# Or use make
-make setup
-```
-
-### Manual Installation
-```bash
-make build
-make install
-make start
-make status
-```
-
-## Configuration
-
-All settings in `config.json`:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `nsec` | Your Nostr private key | Required |
-| `post_to_relays` | Whether to actually post | `true` |
-| `relays` | List of relay URLs | `["wss://relay.hitchwiki.org"]` |
-| `hw_interval` | Hitchwiki check interval (seconds) | `300` |
-| `hitch_interval` | Hitchmap check interval (seconds) | `86400` |
-| `secret_hitchwiki_url` | Alternative Hitchwiki domain (bypass Cloudflare) | `""` |
-| `debug` | Enable debug logging | `false` |
-| `dry_run` | Test mode | `false` |
-
-## Command Line Options
-
-| Flag | Description |
-|------|-------------|
-| `-config` | Configuration file (default: config.json) |
-| `-debug` | Enable debug logging |
-| `-dry-run` | Don't post to relays |
-| `-once` | Run once and exit |
-| `-force-post` | Force post 5 Hitchwiki and 5 Hitchmap notes |
-| `-disable-duplicate-check` | Disable duplicate checking |
+### 3. Unique Identifiers
+- **Hitchwiki**: Uses RSS entry ID (full diff URL) as unique key
+- **Hitchmap**: Uses database record ID with `hitchmap_` prefix
+- **Nostr tags**: `r` tag contains reference URL for future duplicate detection
 
 ## Data Sources
 
-### Hitchwiki Integration
-- **Languages**: 17 language versions (en, de, es, fr, ru, etc.)
-- **Format**: RSS/Atom feeds
-- **Content**: Recent changes, filtered for bot edits
-- **Tags**: `#hitchhiking`, `#hitchwiki`, geo tags when available
+- **Hitchwiki**: Recent changes from RSS feeds (17 languages)
+- **Hitchmap**: Geographic hitchhiking data from SQLite database
+- **Tags**: `#hitchhiking`, `#hitchwiki`, `#hitchmap`, geo coordinates
 
-### Hitchmap Integration
-- **Source**: SQLite database with geographic data
-- **Content**: Hitchhiking spot information
-- **Tags**: `#hitchhiking`, `#hitchmap`, `#map-notes`, geo tags
-
-## Nostr Integration
-
-### Event Structure
-- **Kind**: 1 (text note)
-- **Content**: Markdown with hashtags
-- **Tags**: 
-  - `r` tag: Reference URL for duplicate checking
-  - `summary` tag: Full content summary
-  - `#hitchhiking`: Primary hashtag
-  - Geo tags: `g`, `L`, `l` for coordinates and plus codes
-
-### Duplicate Prevention
-- Query existing notes from relays at startup
-- Maintain in-memory set of posted content IDs
-- Check against existing content before posting
-- Use RSS item IDs and database record IDs as unique identifiers
-
-## Service Management
+## Commands
 
 ```bash
-# Start/stop/restart service
-make start
-make stop
-make restart
+# Local
+./nostrhitch-daemon -once          # Run once
+./nostrhitch-daemon -debug         # Debug mode
+./nostrhitch-daemon -dry-run       # Test mode
 
-# Check status and logs
-make status
-make logs
-
-# Configuration management
-make config          # Show current config
-make edit-config     # Edit config file
-make test-config     # Test configuration
+# Docker
+docker-compose up -d               # Start daemon
+docker-compose down                # Stop daemon
+docker-compose restart             # Reload config
+docker-compose logs -f             # View logs
 ```
-
-## Development
-
-```bash
-# Test changes
-make test
-
-# Debug issues
-make debug
-
-# Clean build
-make clean && make build
-```
-
-## Architecture
-
-The daemon uses a simple, efficient design:
-
-1. **Main Goroutine**: Handles signals and coordinates tasks
-2. **Hitchwiki Goroutine**: Fetches and posts recent changes from all languages
-3. **Hitchmap Goroutine**: Fetches and posts hitchhiking data from SQLite
-4. **Shared State**: Thread-safe duplicate checking
-
-## Dependencies
-
-### Go Modules
-- `github.com/nbd-wtf/go-nostr` - Nostr protocol implementation
-- `github.com/mattn/go-sqlite3` - SQLite database driver
-- `github.com/btcsuite/btcd/btcutil/bech32` - Bech32 encoding
-- `github.com/google/open-location-code/go` - Plus codes
-- `github.com/mmcloughlin/geohash` - Geohash encoding
-
-### External Services
-- **Hitchwiki**: RSS feeds from multiple language versions
-- **Hitchmap**: SQLite database updates
-- **Nostr Relays**: WebSocket connections for publishing
-
-## System Requirements
-
-- **OS**: Linux (systemd support)
-- **Go**: 1.21+ (for building)
-- **Memory**: 50MB+ available
-- **Storage**: 100MB+ for databases and logs
-- **Network**: Internet access for data sources and relays
 
 ## File Structure
 
 ```
 nostrhitch/
 ├── main.go                 # Main daemon
-├── config.json.example     # Configuration template
-├── Makefile               # Build and deployment commands
-├── setup.sh              # Automated installation
-├── nostrhitch-daemon.service # systemd service file
-├── hitchmap-dumps/        # SQLite database files
-└── logs/                  # Log files
+├── config.json             # Configuration
+├── docker-compose.yml      # Docker setup
+├── hitchmap-dumps/         # SQLite databases (persistent)
+└── logs/                   # Log files
 ```
-
-## Performance
-
-- **Memory**: ~10-20MB typical usage
-- **CPU**: Low, event-driven processing
-- **Network**: Minimal, only during data fetching and posting
-- **Storage**: ~50MB for SQLite databases
-
-## Security
-
-- **Private Key**: Stored in configuration file (nsec format)
-- **Access**: File system permissions required
-- **Data Validation**: Input sanitization and output validation
-- **Error Handling**: Graceful failure modes
-
-## Monitoring
-
-- **Log Levels**: Info, Debug, Error
-- **Metrics**: Posts published, errors encountered, data source status
-- **Relay Connectivity**: Connection status tracking
