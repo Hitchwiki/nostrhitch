@@ -52,6 +52,7 @@ Edit `config.json`:
 - **Geo Tags**: Automatic location detection and plus codes
 - **Persistent Storage**: SQLite database survives container restarts
 - **NIP-05 Verification**: Automatic profile management
+- **Event Types**: Hitchwiki uses kind 1 (text notes), Hitchmap uses kind 34242
 
 ## Duplicate Prevention
 
@@ -70,6 +71,29 @@ The bot uses a robust two-tier system to avoid posting duplicates:
 - **Hitchwiki**: Uses RSS entry ID (full diff URL) as unique key
 - **Hitchmap**: Uses database record ID with `hitchmap_` prefix
 - **Nostr tags**: `r` tag contains reference URL for future duplicate detection
+
+## Event Types
+
+The bot publishes two different types of Nostr events:
+
+### Hitchwiki Events (Kind 1)
+- **Kind**: 1 (text note)
+- **Content**: Formatted as "📝 Author edited URL 📄 #hitchhiking"
+- **Tags**: 
+  - `r` tag: Full diff URL for duplicate checking
+  - `summary` tag: HTML summary from RSS feed
+  - `t` tags: `hitchhiking`, `hitchwiki`
+  - `g` tags: Geographic coordinates and geohash
+  - `L`/`l` tags: Open Location Code (plus codes)
+
+### Hitchmap Events (Kind 34242)
+- **Kind**: 34242 (custom event type for geographic data)
+- **Content**: Formatted as "hitchmap.com Author: Description #hitchhiking"
+- **Tags**:
+  - `d` tag: Database record ID for duplicate checking
+  - `g` tags: Geographic coordinates and geohash
+  - `L`/`l` tags: Open Location Code with multiple precision levels
+  - `t` tags: `hitchmap`, `map-notes`
 
 ## Data Sources
 

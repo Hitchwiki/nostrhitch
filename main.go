@@ -842,8 +842,13 @@ func (d *Daemon) createHitchwikiEvent(entry HitchwikiEntry, lang string) *nostr.
 			nostr.Tag{"g", fmt.Sprintf("%.6f,%.6f", geoInfo.Lat, geoInfo.Lng)},
 			nostr.Tag{"L", "open-location-code"},
 			nostr.Tag{"l", geoInfo.PlusCode, "open-location-code"},
-			nostr.Tag{"g", geoInfo.Geohash},
 		)
+
+		// Add geohash and its prefixes
+		geohashPrefixes := generateGeohashPrefixes(geoInfo.Geohash)
+		for _, prefix := range geohashPrefixes {
+			tags = append(tags, nostr.Tag{"g", prefix})
+		}
 	}
 
 	event := &nostr.Event{
@@ -879,13 +884,18 @@ func (d *Daemon) createHitchmapEvent(entry HitchmapEntry) *nostr.Event {
 		{"l", plusCode[:6] + "00+", plusCode[:4] + "0000+", plusCode[:2] + "000000+", "open-location-code-prefix"},
 		{"L", "trustroots-circle"},
 		{"l", "hitchhikers", "trustroots-circle"},
-		{"g", geohash},
 		{"t", "hitchmap"},
 		{"t", "map-notes"},
 	}
 
+	// Add geohash and its prefixes
+	geohashPrefixes := generateGeohashPrefixes(geohash)
+	for _, prefix := range geohashPrefixes {
+		tags = append(tags, nostr.Tag{"g", prefix})
+	}
+
 	event := &nostr.Event{
-		Kind:      nostr.KindTextNote, // Use kind 1 for text notes
+		Kind:      34242, // Use kind 34242 for hitchmap notes
 		Content:   content,
 		Tags:      tags,
 		CreatedAt: nostr.Now(),
@@ -939,11 +949,11 @@ func (d *Daemon) fetchExistingNotes() {
 
 	log.Printf("Fetching existing notes from relays for duplicate checking...")
 
-	// Create filter for our pubkey's text notes
+	// Create filter for our pubkey's notes (both Hitchwiki text notes and Hitchmap kind 34242)
 	filters := []nostr.Filter{{
 		Authors: []string{d.nostr.pk},
-		Kinds:   []int{int(nostr.KindTextNote)}, // All text notes (both Hitchwiki and Hitchmap)
-		Limit:   1000,                           // Get more notes to check against
+		Kinds:   []int{int(nostr.KindTextNote), 34242}, // Text notes (Hitchwiki) and kind 34242 (Hitchmap)
+		Limit:   1000,                                  // Get more notes to check against
 	}}
 
 	// Query all relays
@@ -1228,6 +1238,33 @@ func (d *Daemon) normalizeWhitespace(text string) string {
 		lines[i] = strings.TrimSpace(re.ReplaceAllString(line, " "))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// generateGeohashPrefixes creates 7 items from a geohash string: 6 prefixes + full geohash
+// e.g. "spd49p1xw724" becomes ["s", "sp", "spd4", "spd49", "spd49p", "spd49p1", "spd49p1xw724"]
+func generateGeohashPrefixes(geohash string) []string {
+	if len(geohash) < 6 {
+		// If geohash is too short, return what we can plus the full geohash
+		prefixes := make([]string, 0, len(geohash)+1)
+		for i := 1; i <= len(geohash); i++ {
+			prefixes = append(prefixes, geohash[:i])
+		}
+		prefixes = append(prefixes, geohash) // Add full geohash
+		return prefixes
+	}
+
+	// Generate 6 prefixes + full geohash: 1, 2, 4, 5, 6, 7 characters + full
+	prefixes := []string{
+		geohash[:1], // "s"
+		geohash[:2], // "sp"
+		geohash[:3], // "spd"
+		geohash[:4], // "spd4"
+		geohash[:5], // "spd49"
+		geohash[:6], // "spd49p"
+		geohash,     // "spd49p1xw724" (full geohash)
+	}
+
+	return prefixes
 }
 
 type GeoInfo struct {
