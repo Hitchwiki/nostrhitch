@@ -6,5 +6,6 @@
   ],
   "hw_interval": 300,
   "hitch_interval": 86400,
+  "hitchmap_days_limit": 12,
   "secret_hitchwiki_url": "http://hitchwiki-other-access.example.net"
 }

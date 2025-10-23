@@ -34,6 +34,7 @@ type Config struct {
 	Relays             []string `json:"relays"`
 	HWInterval         int      `json:"hw_interval"`
 	HitchInterval      int      `json:"hitch_interval"`
+	HitchmapDaysLimit  int      `json:"hitchmap_days_limit"` // Number of days to look back for hitchmap data
 	Debug              bool     `json:"debug"`
 	DryRun             bool     `json:"dry_run"`
 	SecretHitchwikiURL string   `json:"secret_hitchwiki_url,omitempty"` // Alternative Hitchwiki domain
@@ -158,6 +159,11 @@ func loadConfig(filename string) *Config {
 	config := &Config{}
 	if err := json.Unmarshal(data, config); err != nil {
 		log.Fatalf("Error parsing config file '%s': %v", filename, err)
+	}
+
+	// Set default values for optional fields
+	if config.HitchmapDaysLimit == 0 {
+		config.HitchmapDaysLimit = 12 // Default to 12 days if not specified
 	}
 
 	// Validate required fields
@@ -662,7 +668,7 @@ func (d *Daemon) fetchHitchmap() []HitchmapEntry {
 
 	// Calculate date range
 	today := time.Now().Format("2006-01-02")
-	earlier := time.Now().AddDate(0, 0, -12).Format("2006-01-02")
+	earlier := time.Now().AddDate(0, 0, -d.config.HitchmapDaysLimit).Format("2006-01-02")
 
 	filename := fmt.Sprintf("hitchmap-dumps/hitchmap_%s.sqlite", today)
 	url := "https://hitchmap.com/dump.sqlite"
@@ -690,6 +696,7 @@ func (d *Daemon) fetchHitchmap() []HitchmapEntry {
 	defer db.Close()
 
 	query := fmt.Sprintf("SELECT * FROM points WHERE datetime > '%s'", earlier)
+	log.Printf("Fetching hitchmap data from last %d days (since %s)", d.config.HitchmapDaysLimit, earlier)
 	log.Printf("Executing query: %s", query)
 
 	rows, err := db.Query(query)
