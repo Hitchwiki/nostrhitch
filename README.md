@@ -1,6 +1,18 @@
 # Nostr Hitchhiking Bot
 
-A Go daemon that publishes Hitchwiki and Hitchmap content to Nostr relays.
+A vibe coded Go daemon that publishes Hitchwiki and Hitchmap content to Nostr relays.
+
+It fetches a recent sqlite dump from hitchmap and then posts these notes as kind 34242 onto some nostr relays.
+Kinds 3xxxx are replaceable notes. (42 is the answer to everything.) 
+
+Nostrhitch also fetches recent changes across the different hitchwiki languages and posts them as (currently) kind 1 notes.
+
+Hitchhikers will soon(tm) be able to see these notes and add new spots at https://maps.hitchwiki.org/
+The nostr maps code for this lives at https://github.com/hitchwiki/hitchmap-nostr
+
+
+See also
+https://hitchwiki.org/en/User:Nostrhitch
 
 ## Quick Start
 
