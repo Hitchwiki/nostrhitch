@@ -1,4 +1,4 @@
-# Nostr Hitchhiking Bot
+# [Deprecated] - Nostr Hitchhiking Bot
 
 A vibe coded Go daemon that publishes Hitchwiki and Hitchmap content to Nostr relays.
 
