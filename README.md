@@ -1,6 +1,6 @@
 # [Deprecated] - Nostr Hitchhiking Bot
 
-A vibe coded Go daemon that publishes Hitchwiki and Hitchmap content to Nostr relays.
+A vibe coded Go daemon that publishes [Hitchwiki and Hitchmap](https://maps.hitchwiki.org) content to Nostr relays.
 
 It fetches a recent sqlite dump from hitchmap and then posts these notes as kind 34242 onto some nostr relays.
 Kinds 3xxxx are replaceable notes. (42 is the answer to everything.) 
